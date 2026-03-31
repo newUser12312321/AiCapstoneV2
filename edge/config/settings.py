@@ -30,10 +30,21 @@ class Settings(BaseSettings):
     CAMERA_HEIGHT: int = Field(default=1080)
 
     # ── YOLO 추론 설정 ───────────────────────────────────────────────────────
-    # .pt 가중치 파일 경로 (프로젝트 루트 기준 상대 경로)
+    # Stage 1: 피듀셜 마크 탐지 모델 (클래스: FIDUCIAL)
+    YOLO_FIDUCIAL_WEIGHTS: str = Field(default="weights/fiducial_best.pt")
+    # Stage 2: 결함 탐지 모델 (클래스: TRACE_OPEN, METAL_DAMAGE)
+    YOLO_DEFECT_WEIGHTS: str = Field(default="weights/defect_best.pt")
+
+    # 하위 호환: 단일 모델 사용 시 (두 Stage 합쳐서 학습한 경우)
     YOLO_WEIGHTS_PATH: str = Field(default="weights/best.pt")
+
     # 이 값 이상의 confidence를 가진 탐지 결과만 사용
     YOLO_CONFIDENCE_THRESHOLD: float = Field(default=0.5)
+
+    # 2-Stage 분리 모델 사용 여부
+    # True: fiducial_best.pt + defect_best.pt 각각 사용
+    # False: best.pt 단일 모델 사용
+    USE_SEPARATE_MODELS: bool = Field(default=False)
 
     # ── FastAPI 서버 포트 ────────────────────────────────────────────────────
     EDGE_API_PORT: int = Field(default=8000)

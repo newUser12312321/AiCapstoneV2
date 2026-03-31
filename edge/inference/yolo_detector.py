@@ -36,9 +36,13 @@ class YoloDetector:
     모델 로드는 최초 1회만 수행하고 이후에는 캐시된 모델을 재사용한다.
     (애플리케이션 시작 시 한 번만 인스턴스화할 것)
 
-    사용 예:
+    사용 예 — 단일 모델:
         detector = YoloDetector()
         items = detector.detect(frame, target_class="FIDUCIAL")
+
+    사용 예 — 2-Stage 분리 모델:
+        fiducial_detector = YoloDetector(weights_path=settings.YOLO_FIDUCIAL_WEIGHTS)
+        defect_detector   = YoloDetector(weights_path=settings.YOLO_DEFECT_WEIGHTS)
     """
 
     def __init__(

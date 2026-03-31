@@ -59,10 +59,12 @@ logger = logging.getLogger("main")
 
 
 # ── 전역 싱글턴 객체 (앱 수명 주기 동안 유지) ─────────────────────────────────
-camera:  Optional[CameraCapture]  = None
-detector: Optional[YoloDetector]  = None
-gpio:    Optional[GpioController] = None
-sender:  Optional[ServerSender]   = None
+camera:           Optional[CameraCapture] = None
+detector:         Optional[YoloDetector]  = None  # 단일 모델 모드
+fiducial_detector: Optional[YoloDetector] = None  # 분리 모델 — Stage 1 전용
+defect_detector:   Optional[YoloDetector] = None  # 분리 모델 — Stage 2 전용
+gpio:             Optional[GpioController] = None
+sender:           Optional[ServerSender]   = None
 
 
 # ── FastAPI 수명 주기 이벤트 ──────────────────────────────────────────────────
@@ -97,9 +99,19 @@ async def lifespan(app: FastAPI):
         logger.warning("[시작] 카메라 초기화 실패 (더미 모드로 계속): %s", e)
         camera = None
 
-    # YOLO 모델 로드
-    detector = YoloDetector()
-    detector.load()
+    # YOLO 모델 로드 — settings.USE_SEPARATE_MODELS 값에 따라 분기
+    if settings.USE_SEPARATE_MODELS:
+        # 2-Stage 분리 모델: fiducial_best.pt + defect_best.pt 각각 로드
+        logger.info("[시작] 2-Stage 분리 모델 로드 모드")
+        fiducial_detector = YoloDetector(weights_path=settings.YOLO_FIDUCIAL_WEIGHTS)
+        fiducial_detector.load()
+        defect_detector = YoloDetector(weights_path=settings.YOLO_DEFECT_WEIGHTS)
+        defect_detector.load()
+    else:
+        # 단일 통합 모델: best.pt 하나로 모든 클래스 탐지
+        logger.info("[시작] 단일 통합 모델 로드 모드")
+        detector = YoloDetector()
+        detector.load()
 
     # GPIO 초기화
     gpio = GpioController()
@@ -198,7 +210,9 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
 
         # STEP 2-A: Stage 1 — 피듀셜 마크 탐지 및 정렬 검사
         logger.info("[파이프라인] STEP 2-A — 피듀셜 마크 탐지")
-        fiducials, fiducial_ms = detector.detect_fiducials(frame)
+        # 분리 모델이면 fiducial_detector, 통합 모델이면 detector 사용
+        stage1 = fiducial_detector if settings.USE_SEPARATE_MODELS else detector
+        fiducials, fiducial_ms = stage1.detect_fiducials(frame)
         alignment = compute_alignment(fiducials)
 
         logger.info(
@@ -232,7 +246,9 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
         # STEP 2-B: Stage 2 — ROI 크롭 후 결함 탐지
         logger.info("[파이프라인] STEP 2-B — 결함 탐지 (ROI)")
         roi = crop_inspection_roi(frame, alignment)
-        defect_items, defect_ms = detector.detect_defects(roi)
+        # 분리 모델이면 defect_detector, 통합 모델이면 detector 사용
+        stage2 = defect_detector if settings.USE_SEPARATE_MODELS else detector
+        defect_items, defect_ms = stage2.detect_defects(roi)
 
         logger.info("[파이프라인] 결함 탐지: %d건", len(defect_items))
 
