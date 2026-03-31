@@ -140,12 +140,20 @@ class ServerSender:
 
 # ── 더미 패킷 생성 유틸리티 (개발/테스트용) ──────────────────────────────────
 
-def create_dummy_packet(device_id: str = "RPI5-LINE-A") -> InspectionPacket:
+def create_dummy_packet(
+    device_id: str = "RPI5-LINE-A",
+    force_fail: bool = False,
+    force_pass: bool = False,
+) -> InspectionPacket:
     """
     Step 3 테스트용 더미 InspectionPacket을 생성한다.
 
     실제 카메라/YOLO 없이 서버 연동을 확인할 때 사용.
     main.py의 더미 모드에서 호출된다.
+
+    Args:
+        force_fail: True면 무조건 FAIL 결과 생성 (시연용)
+        force_pass: True면 무조건 PASS 결과 생성 (시연용)
 
     Returns:
         더미 검사 결과 패킷
@@ -154,8 +162,13 @@ def create_dummy_packet(device_id: str = "RPI5-LINE-A") -> InspectionPacket:
     from models.schemas import DefectPayload, InspectionResult
     import random
 
-    # 70% 확률 PASS, 30% 확률 FAIL
-    is_pass = random.random() > 0.3
+    if force_fail:
+        is_pass = False
+    elif force_pass:
+        is_pass = True
+    else:
+        # 70% 확률 PASS, 30% 확률 FAIL
+        is_pass = random.random() > 0.3
     result = InspectionResult.PASS if is_pass else InspectionResult.FAIL
 
     defects = []

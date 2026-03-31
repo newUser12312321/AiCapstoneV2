@@ -8,6 +8,7 @@ FastAPI 로컬 API 라우터
 Base URL: http://<라즈베리파이_IP>:8000
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -21,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 # APIRouter: main.py의 FastAPI 앱에 include_router()로 등록한다.
 router = APIRouter(prefix="/edge", tags=["Edge Device"])
+
+# ── 자동 연속 검사 상태 관리 ──────────────────────────────────────────────────
+_auto_running: bool = False       # 자동 검사 루프 실행 중 여부
+_auto_interval: float = 5.0      # 검사 간격 (초)
 
 
 # ── 상태 조회 ─────────────────────────────────────────────────────────────────
@@ -136,3 +141,133 @@ async def send_dummy_inspection() -> dict[str, Any]:
         "sent_packet": packet.to_server_json(),
         "server_response": response,
     }
+
+
+# ── 시연용 엔드포인트 ─────────────────────────────────────────────────────────
+
+@router.post("/inspect/demo/fail", summary="[시연용] FAIL 결과 강제 전송")
+async def demo_force_fail() -> dict[str, Any]:
+    """
+    시연용: FAIL 결과를 무조건 생성하여 서버로 전송합니다.
+    모델 학습 전에도 FAIL 알람·대시보드 표시를 시연할 때 사용합니다.
+
+    GPIO 알람(빨간 LED + 부저)도 함께 동작합니다.
+    """
+    logger.info("[시연] FAIL 강제 전송 요청")
+
+    packet = create_dummy_packet(device_id="RPI5-LINE-A", force_fail=True)
+
+    # GPIO 알람 동작
+    try:
+        from main import _gpio
+        if _gpio:
+            _gpio.signal_fail()
+    except Exception:
+        pass
+
+    sender = ServerSender()
+    response = sender.send(packet)
+    sender.close()
+
+    if response is None:
+        raise HTTPException(status_code=502, detail="서버 전송 실패")
+
+    return {
+        "message": "🔴 FAIL 시연 전송 완료 — 빨간 LED + 부저 동작",
+        "result": "FAIL",
+        "defects": [d.defect_type for d in packet.defects],
+        "server_response": response,
+    }
+
+
+@router.post("/inspect/demo/pass", summary="[시연용] PASS 결과 강제 전송")
+async def demo_force_pass() -> dict[str, Any]:
+    """
+    시연용: PASS 결과를 무조건 생성하여 서버로 전송합니다.
+    정상 → 결함 → 정상 복구 흐름을 시연할 때 사용합니다.
+
+    GPIO 알람(초록 LED)도 함께 동작합니다.
+    """
+    logger.info("[시연] PASS 강제 전송 요청")
+
+    packet = create_dummy_packet(device_id="RPI5-LINE-A", force_pass=True)
+
+    try:
+        from main import _gpio
+        if _gpio:
+            _gpio.signal_pass()
+    except Exception:
+        pass
+
+    sender = ServerSender()
+    response = sender.send(packet)
+    sender.close()
+
+    if response is None:
+        raise HTTPException(status_code=502, detail="서버 전송 실패")
+
+    return {
+        "message": "🟢 PASS 시연 전송 완료 — 초록 LED 동작",
+        "result": "PASS",
+        "server_response": response,
+    }
+
+
+@router.post("/inspect/auto/start", summary="[시연용] 자동 연속 검사 시작")
+async def auto_inspect_start(
+    interval: float = 5.0,
+    background_tasks: BackgroundTasks = None,
+) -> dict[str, str]:
+    """
+    시연용: 일정 간격으로 자동 반복 검사를 시작합니다.
+    기판을 올려놓으면 자동으로 검사 → 결과 전송이 반복됩니다.
+
+    Args:
+        interval: 검사 간격 (초, 기본값 5초)
+    """
+    global _auto_running, _auto_interval
+    if _auto_running:
+        return {"message": f"자동 검사가 이미 실행 중입니다. (간격: {_auto_interval}초)"}
+
+    _auto_running = True
+    _auto_interval = interval
+    logger.info("[시연] 자동 연속 검사 시작 — 간격: %.1f초", interval)
+
+    background_tasks.add_task(_auto_inspect_loop)
+    return {"message": f"✅ 자동 검사 시작 (간격: {interval}초) — /edge/inspect/auto/stop 으로 중지"}
+
+
+@router.post("/inspect/auto/stop", summary="[시연용] 자동 연속 검사 중지")
+async def auto_inspect_stop() -> dict[str, str]:
+    """자동 반복 검사를 중지합니다."""
+    global _auto_running
+    _auto_running = False
+    logger.info("[시연] 자동 연속 검사 중지 요청")
+    return {"message": "⏹ 자동 검사 중지됨"}
+
+
+@router.get("/inspect/auto/status", summary="자동 검사 실행 상태 조회")
+async def auto_inspect_status() -> dict[str, Any]:
+    """자동 검사 실행 여부와 설정된 간격을 반환합니다."""
+    return {
+        "running": _auto_running,
+        "interval_seconds": _auto_interval,
+    }
+
+
+async def _auto_inspect_loop() -> None:
+    """
+    자동 연속 검사 백그라운드 루프.
+    _auto_running 이 False가 될 때까지 interval마다 검사를 실행합니다.
+    """
+    global _auto_running
+    while _auto_running:
+        try:
+            from main import run_inspection_pipeline
+            logger.info("[자동검사] 검사 실행 중...")
+            await asyncio.get_event_loop().run_in_executor(None, run_inspection_pipeline)
+        except Exception as e:
+            logger.error("[자동검사] 파이프라인 오류: %s", e)
+
+        if _auto_running:
+            await asyncio.sleep(_auto_interval)
