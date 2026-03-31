@@ -20,6 +20,12 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      // 라즈베리파이 Edge 캡처 이미지 프록시
+      // /captures/* → http://192.168.0.7:8000/captures/*
+      '/captures': {
+        target: 'http://192.168.0.7:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

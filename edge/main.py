@@ -32,6 +32,7 @@ from typing import Optional
 import cv2
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from api.router import router as edge_router
 from api.sender import ServerSender, create_dummy_packet
@@ -143,6 +144,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# 캡처 이미지 정적 서빙: /captures/<filename>.jpg
+app.mount("/captures", StaticFiles(directory="captures"), name="captures")
 
 # CORS 설정: 같은 LAN의 운영자 PC 브라우저에서 직접 접근 허용
 app.add_middleware(

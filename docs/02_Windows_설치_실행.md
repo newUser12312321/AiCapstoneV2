@@ -198,22 +198,24 @@ ssh pi@192.168.0.25
 # 라즈베리파이 안에서 실행
 cd ~/inspection/edge
 source .venv/bin/activate
-python main.py
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 ---
 
 ## 동작 확인 순서
 
+> PowerShell에서는 `curl -X` 대신 `iwr -Method POST`를 사용합니다.
+
 ```powershell
 # 1. 라즈베리파이 FastAPI 서버 확인
-curl http://192.168.0.25:8000/edge/health
+iwr http://192.168.0.25:8000/edge/health
 
 # 2. 더미 데이터 전송 테스트 (Spring Boot 실행 중이어야 함)
-curl -X POST http://192.168.0.25:8000/edge/inspect/dummy
+iwr -Method POST http://192.168.0.25:8000/edge/inspect/dummy
 
 # 3. DB 저장 확인
-curl http://localhost:8080/api/inspections
+iwr http://localhost:8080/api/inspections
 
 # 4. 브라우저에서 대시보드 확인
 # http://localhost:5173

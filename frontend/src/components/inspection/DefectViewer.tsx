@@ -112,8 +112,20 @@ interface DefectViewerProps {
   onClose:      () => void
 }
 
+function resolveImageSrc(imagePath: string | null): string | null {
+  if (!imagePath) return null
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) return imagePath
+  if (imagePath.startsWith('/captures/')) return imagePath
+  if (imagePath.startsWith('captures/')) return `/${imagePath}`
+
+  const capturesIndex = imagePath.indexOf('/captures/')
+  if (capturesIndex >= 0) return imagePath.slice(capturesIndex)
+  return imagePath
+}
+
 export default function DefectViewer({ inspectionId, onClose }: DefectViewerProps) {
   const { data: log, isLoading } = useInspectionById(inspectionId)
+  const imageSrc = resolveImageSrc(log?.imagePath ?? null)
 
   /* 표시 중인 이미지 엘리먼트의 실제 렌더링 크기를 추적 */
   const imgRef = useRef<HTMLImageElement>(null)
@@ -176,11 +188,11 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
 
           {/* 좌측: 이미지 + SVG 오버레이 */}
           <div className="relative flex-1 bg-gray-950 min-h-48">
-            {log.imagePath ? (
+            {imageSrc ? (
               /* 실제 캡처 이미지 */
               <img
                 ref={imgRef}
-                src={log.imagePath}
+                src={imageSrc}
                 alt="검사 캡처 이미지"
                 className="w-full h-auto"
                 onLoad={() => {

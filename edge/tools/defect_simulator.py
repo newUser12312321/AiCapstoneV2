@@ -53,8 +53,8 @@ def add_trace_open(img: np.ndarray, region: Optional[tuple] = None) -> tuple[np.
         cx = random.randint(x1, x2)
         cy = random.randint(y1, y2)
 
-    gap_w = random.randint(6, 18)
-    gap_h = random.randint(3, 8)
+    gap_w = random.randint(12, 28)
+    gap_h = random.randint(6, 14)
     angle = random.uniform(-30, 30)
 
     # 갭 영역을 어두운 색(배경색)으로 채워 단선처럼 표현
@@ -88,7 +88,7 @@ def add_metal_damage(img: np.ndarray, region: Optional[tuple] = None) -> tuple[n
         cx = random.randint(x1, x2)
         cy = random.randint(y1, y2)
 
-    size = random.randint(10, 25)
+    size = random.randint(18, 40)
 
     # 불규칙한 다각형으로 까짐 영역 표현
     num_points = random.randint(5, 9)
@@ -298,7 +298,7 @@ def generate_defect_dataset(
 
             total_generated += 1
 
-    print(f"✅ 데이터셋 생성 완료: {total_generated}장 → {output_dir}")
+    print(f"데이터셋 생성 완료: {total_generated}장 -> {output_dir}")
     _write_data_yaml(output_dir, defect_types)
 
 
@@ -397,15 +397,28 @@ if __name__ == "__main__":
     parser.add_argument("--output", default="./synthetic_dataset", help="출력 폴더 (generate 모드)")
     parser.add_argument("--count", type=int, default=5, help="이미지당 생성 수 (generate 모드)")
     parser.add_argument("--defects", type=int, default=3, help="이미지당 결함 수")
+    parser.add_argument(
+        "--types",
+        default="trace_open,metal_damage,pinhole,short",
+        help="생성할 결함 타입 목록(콤마 구분). 예: trace_open,metal_damage",
+    )
     parser.add_argument("--save", help="미리보기 저장 경로 (preview 모드)")
     args = parser.parse_args()
 
     if args.mode == "preview":
         preview_defects(args.input, args.save)
     else:
+        selected_types = [t.strip().lower() for t in args.types.split(",") if t.strip()]
+        valid_types = [t for t in selected_types if t in DEFECT_FUNCTIONS]
+        if not valid_types:
+            raise ValueError(
+                "유효한 결함 타입이 없습니다. 사용 가능: "
+                + ", ".join(sorted(DEFECT_FUNCTIONS.keys()))
+            )
         generate_defect_dataset(
             input_dir=args.input,
             output_dir=args.output,
             defects_per_image=args.defects,
             augment_count=args.count,
+            defect_types=valid_types,
         )
