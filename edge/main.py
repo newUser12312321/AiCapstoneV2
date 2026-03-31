@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI):
     - GPIO 핀 안전 초기화
     - HTTP 세션 종료
     """
-    global camera, detector, gpio, sender
+    global camera, detector, fiducial_detector, defect_detector, gpio, sender
     logger.info("=" * 60)
     logger.info("   PCB 비전 검사 스테이션 시작 [%s]", settings.ENVIRONMENT.upper())
     logger.info("=" * 60)

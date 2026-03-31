@@ -87,11 +87,14 @@ cd ~/inspection
 # 최신 코드 받기
 git pull origin main
 
-# FastAPI 서버 재시작
+# FastAPI 서버 재시작 (systemd 사용 시)
 sudo systemctl restart inspection-edge
-
-# 재시작 확인
 sudo systemctl status inspection-edge
+
+# systemd 미사용이면 수동 실행
+cd ~/inspection/edge
+source .venv/bin/activate
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 ---
@@ -127,17 +130,8 @@ git diff
 # 커밋 이력 확인
 git log --oneline -10
 
-# 특정 파일만 되돌리기
-git checkout -- backend/src/main/resources/application.yml
-
-# 마지막 커밋 취소 (코드는 유지)
-git reset --soft HEAD~1
-
 # 원격 저장소 최신 상태 확인 (다운로드 없이)
 git fetch origin
-
-# 충돌 발생 시 현재 브랜치 상태로 강제 유지
-git checkout --ours <충돌파일>
 ```
 
 ---

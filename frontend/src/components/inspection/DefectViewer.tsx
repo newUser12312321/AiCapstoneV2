@@ -92,15 +92,19 @@ function FiducialMarker({
 }) {
   const sx = x * scaleX
   const sy = y * scaleY
+  const color = "#00e5ff"
   return (
     <g>
       {/* 십자선 */}
-      <line x1={sx - 10} y1={sy} x2={sx + 10} y2={sy} stroke="#818cf8" strokeWidth={1.5} />
-      <line x1={sx} y1={sy - 10} x2={sx} y2={sy + 10} stroke="#818cf8" strokeWidth={1.5} />
-      {/* 원 */}
-      <circle cx={sx} cy={sy} r={6} fill="transparent" stroke="#818cf8" strokeWidth={1.5} />
+      <line x1={sx - 20} y1={sy} x2={sx + 20} y2={sy} stroke={color} strokeWidth={3} />
+      <line x1={sx} y1={sy - 20} x2={sx} y2={sy + 20} stroke={color} strokeWidth={3} />
+      {/* 바깥 원 + 중심점 */}
+      <circle cx={sx} cy={sy} r={14} fill="transparent" stroke={color} strokeWidth={3} />
+      <circle cx={sx} cy={sy} r={4} fill={color} />
+      {/* 레이블 배경 */}
+      <rect x={sx + 14} y={sy - 26} width={28} height={18} rx={4} fill={color} />
       {/* 레이블 */}
-      <text x={sx + 10} y={sy - 8} fill="#a5b4fc" fontSize={10} fontWeight="600">{label}</text>
+      <text x={sx + 28} y={sy - 13} fill="#001018" fontSize={11} fontWeight="700" textAnchor="middle">{label}</text>
     </g>
   )
 }
@@ -222,7 +226,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
               {log.fiducial1X != null && log.fiducial1Y != null && (
                 <FiducialMarker
                   x={log.fiducial1X} y={log.fiducial1Y}
-                  label="F1" scaleX={1} scaleY={1}
+                  label="F1" scaleX={scaleX} scaleY={scaleY}
                 />
               )}
 
@@ -230,7 +234,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
               {log.fiducial2X != null && log.fiducial2Y != null && (
                 <FiducialMarker
                   x={log.fiducial2X} y={log.fiducial2Y}
-                  label="F2" scaleX={1} scaleY={1}
+                  label="F2" scaleX={scaleX} scaleY={scaleY}
                 />
               )}
 
