@@ -4,7 +4,11 @@ uvicorn[standard]==0.29.0
 
 # ===== 컴퓨터 비전 및 AI 추론 =====
 opencv-python==4.9.0.80
-ultralytics==8.2.18          # YOLOv8 / YOLO11
+ultralytics==8.2.18          # YOLOv8
+# PyTorch 2.6+는 torch.load 기본값 변경으로 ultralytics 8.2.18과 충돌 가능
+# 라즈베리파이에서 검증된 조합으로 고정
+torch==2.5.1
+torchvision==0.20.1
 
 # ===== 데이터 모델 및 검증 =====
 pydantic==2.7.1
