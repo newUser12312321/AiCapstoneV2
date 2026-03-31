@@ -27,6 +27,7 @@ AiCapstoneV2/
 | [02. Windows 설치/실행](docs/02_Windows_설치_실행.md) | Java/Maven/Node 설치, Spring Boot + React 실행 |
 | [03. 라즈베리파이 설정](docs/03_라즈베리파이_설정.md) | SSH 접속, 카메라/GPIO 설정, systemd 자동 시작 |
 | [04. GitHub 워크플로우](docs/04_GitHub_워크플로우.md) | 맥북 ↔ 집 PC 코드 동기화 방법 |
+| [05. 데이터셋 학습 파이프라인](docs/05_데이터셋_학습_파이프라인.md) | CVAT 라벨링 → Colab 학습 → 가중치 적용 |
 
 ## 빠른 시작
 
