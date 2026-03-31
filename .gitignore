@@ -1,0 +1,30 @@
+# ===== Python (Edge) =====
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv/
+venv/
+edge/.env
+edge/weights/*.pt
+edge/weights/*.onnx
+
+# ===== Java / Maven (Backend) =====
+backend/target/
+# .mvn/ 은 제외하지 않음 → Maven Wrapper 파일이 커밋에 포함되어야 함
+*.class
+*.jar
+*.war
+backend/src/main/resources/application-local.yml
+
+# ===== Node / React (Frontend) =====
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# ===== OS / IDE =====
+.DS_Store
+.idea/
+.vscode/
+*.log

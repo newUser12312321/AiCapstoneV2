@@ -1,0 +1,98 @@
+/**
+ * 프론트엔드 전체에서 사용하는 TypeScript 인터페이스 정의
+ *
+ * Spring Boot InspectionResponseDto와 1:1로 매핑되므로
+ * 백엔드 DTO가 변경되면 이 파일도 함께 수정해야 한다.
+ */
+
+// ── 결함 상세 ─────────────────────────────────────────────────────────────────
+
+/** 개별 결함 정보 (바운딩 박스 포함) */
+export interface DefectDetail {
+  defectType: string      // "TRACE_OPEN" | "METAL_DAMAGE" | "FIDUCIAL_MISSING"
+  confidence: number      // 0.0 ~ 1.0
+  bboxX: number           // 좌상단 X (픽셀)
+  bboxY: number           // 좌상단 Y (픽셀)
+  bboxWidth: number       // 너비 (픽셀)
+  bboxHeight: number      // 높이 (픽셀)
+}
+
+// ── 검사 이력 ─────────────────────────────────────────────────────────────────
+
+/** 최종 판정 결과 타입 */
+export type InspectionResultType = 'PASS' | 'FAIL'
+
+/** 검사 이력 단건 레코드 (GET /api/inspections 응답 요소) */
+export interface InspectionLog {
+  id: number
+  deviceId: string
+  result: InspectionResultType
+
+  /** 피듀셜 마크 좌표 (탐지 실패 시 null) */
+  fiducial1X: number | null
+  fiducial1Y: number | null
+  fiducial2X: number | null
+  fiducial2Y: number | null
+
+  /** 정렬 오차 각도 (°) */
+  angleErrorDeg: number | null
+
+  /** 추론 소요 시간 (ms) */
+  inferenceTimeMs: number | null
+
+  /** 전체 처리 시간 (ms) */
+  totalTimeMs: number | null
+
+  /** 캡처 이미지 경로 */
+  imagePath: string | null
+
+  /** 검사 수행 시각 (ISO 8601) */
+  inspectedAt: string
+
+  /** 서버 레코드 생성 시각 */
+  createdAt: string
+
+  /** 탐지된 결함 목록 */
+  defects: DefectDetail[]
+}
+
+// ── 통계 ─────────────────────────────────────────────────────────────────────
+
+/** GET /api/inspections/stats 응답 */
+export interface InspectionStats {
+  totalCount: number   // 전체 검사 건수
+  passCount:  number   // 합격 건수
+  failCount:  number   // 불합격 건수
+  failRate:   number   // 불량률 (0.0 ~ 100.0, %)
+}
+
+// ── 차트용 파생 타입 ──────────────────────────────────────────────────────────
+
+/** TrendChart에서 사용하는 시간대별 집계 데이터 포인트 */
+export interface TrendDataPoint {
+  label: string    // X축 레이블 (예: "14:30", "03/31")
+  pass:  number
+  fail:  number
+}
+
+/** PassFailChart에서 사용하는 도넛 차트 데이터 */
+export interface PieDataPoint {
+  name:  string
+  value: number
+  fill:  string
+}
+
+// ── 결함 종류 한글 매핑 ───────────────────────────────────────────────────────
+
+export const DEFECT_LABEL: Record<string, string> = {
+  TRACE_OPEN:       '단선',
+  METAL_DAMAGE:     '까짐',
+  FIDUCIAL_MISSING: '마크 누락',
+}
+
+/** 결함 종류별 표시 색상 (Tailwind 클래스 호환 hex) */
+export const DEFECT_COLOR: Record<string, string> = {
+  TRACE_OPEN:       '#f97316',  // orange-500
+  METAL_DAMAGE:     '#ef4444',  // red-500
+  FIDUCIAL_MISSING: '#a855f7',  // purple-500
+}
