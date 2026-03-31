@@ -3,9 +3,9 @@ spring:
     name: inspection-server
 
   datasource:
-    url: jdbc:mysql://localhost:3306/inspection_db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    url: jdbc:mysql://localhost:3306/inspection_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: root
-    password: your_password
+    password: ${DB_PASSWORD:your_password}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
