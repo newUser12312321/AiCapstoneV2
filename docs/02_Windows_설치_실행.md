@@ -17,8 +17,8 @@ winget install Apache.Maven
 # Node.js LTS
 winget install OpenJS.NodeJS.LTS
 
-# MySQL 8.0
-winget install Oracle.MySQL
+# MySQL Server (msstore 인증서 오류 방지용 source 고정)
+winget install --id Oracle.MySQL --source winget --accept-package-agreements --accept-source-agreements
 ```
 
 PowerShell 재시작 후 설치 확인:
@@ -29,6 +29,32 @@ java --version   # openjdk 17.x
 mvn --version    # Apache Maven 3.x
 node --version   # v20.x
 mysql --version  # mysql  Ver 8.x
+```
+
+> `winget` 실행 중 `msstore` 인증서 오류(`0x8a15005e`)가 나면:
+>
+> ```powershell
+> winget source reset --force
+> winget source update
+> winget install --id Oracle.MySQL --source winget --accept-package-agreements --accept-source-agreements
+> ```
+
+### MySQL CLI 확인 (중요)
+
+설치 후 `mysql --version`이 실패하면 `PATH` 미반영 상태입니다.
+
+```powershell
+# 직접 경로 실행 확인
+& "C:\Program Files\MySQL\MySQL Server 8.4\bin\mysql.exe" --version
+
+# PATH 영구 등록 (관리자 PowerShell)
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Program Files\MySQL\MySQL Server 8.4\bin", "Machine")
+```
+
+PowerShell을 완전히 닫고 새로 열어:
+
+```powershell
+mysql --version
 ```
 
 ---
@@ -45,7 +71,16 @@ cd AiCapstoneV2
 
 ---
 
-## 2단계 — MySQL 데이터베이스 초기화
+## 2단계 — MySQL 서비스 확인 + 데이터베이스 초기화
+
+먼저 서비스가 실행 중인지 확인:
+
+```powershell
+net start MySQL84
+```
+
+> `서비스 이름이 잘못되었습니다`가 나오면 설치가 꼬였을 수 있으니
+> [08_트러블슈팅.md](08_트러블슈팅.md)의 `MySQL84 서비스를 시작할 수 없습니다` 항목을 먼저 수행하세요.
 
 ```powershell
 # MySQL 접속 (설치 시 설정한 root 비밀번호 입력)
@@ -65,7 +100,7 @@ EXIT;
 
 ---
 
-## 3단계 — Spring Boot 설정 파일 수정
+## 3단계 — Spring Boot DB 비밀번호 설정
 
 `backend/src/main/resources/application.yml` 열기:
 
@@ -73,13 +108,33 @@ EXIT;
 notepad C:\Projects\AiCapstoneV2\backend\src\main\resources\application.yml
 ```
 
-수정 항목:
+프로젝트는 `DB_PASSWORD` 환경변수를 우선 사용합니다.
+
+```yaml
+spring:
+  datasource:
+    password: ${DB_PASSWORD:your_password}
+```
+
+두 가지 방법 중 하나를 선택:
+
+### 방법 A (권장) — 환경변수 사용
+
+백엔드 실행 전 같은 터미널에서:
+
+```powershell
+$env:DB_PASSWORD="여기에_MySQL_root_비밀번호"
+```
+
+### 방법 B — application.yml 기본값 직접 수정
+
+`your_password`를 실제 비밀번호로 바꿉니다.
 
 ```yaml
 spring:
   datasource:
     username: root
-    password: 여기에_MySQL_비밀번호_입력   # ← 실제 비밀번호로 변경
+    password: ${DB_PASSWORD:여기에_MySQL_비밀번호_입력}
 ```
 
 ---
@@ -106,6 +161,7 @@ Windows Terminal에서 탭 3개를 열어 각각 실행합니다.
 
 ```powershell
 cd C:\Projects\AiCapstoneV2\backend
+$env:DB_PASSWORD="여기에_MySQL_root_비밀번호"   # 방법 A 선택 시
 mvn spring-boot:run
 ```
 
@@ -128,10 +184,10 @@ npm run dev
 정상 기동 확인:
 ```
 VITE v5.x  ready in 500ms
-➜  Local:   http://localhost:5173/
+➜  Local:   http://localhost:5173/  (또는 5174 등 다른 포트)
 ```
 
-브라우저 확인: http://localhost:5173
+브라우저 확인: Vite가 출력한 `Local` 주소로 접속
 
 ### 탭 3 — 라즈베리파이 SSH 접속
 
