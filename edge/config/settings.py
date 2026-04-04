@@ -64,8 +64,12 @@ class Settings(BaseSettings):
     # "development": 개발 PC에서 더미 데이터로 동작
     ENVIRONMENT: str = Field(default="development")
 
-    # ── 정렬 허용 오차 ───────────────────────────────────────────────────────
-    # 이 각도(°) 초과 시 FAIL 판정
+    # ── 정렬 / 각도 보정 ───────────────────────────────────────────────────────
+    # 피듀셜 2개로 측정한 기울기가 이 각도(°)를 넘으면 FAIL (오탐·이상 배치로 간주, 보정 안 함)
+    MAX_DESKEW_ANGLE_DEG: float = Field(default=45.0)
+    # 이보다 작으면 회전 보정 생략 (미세 보간 노이즈 감소)
+    MIN_DESKEW_ANGLE_DEG: float = Field(default=0.05)
+    # 하위 호환·문서용: 과거 "허용 오차 초과 시 FAIL" 모드에서 사용. 파이프라인은 MAX_DESKEW_* 기준.
     MAX_ANGLE_ERROR_DEG: float = Field(default=3.0)
 
     # pydantic-settings 설정:

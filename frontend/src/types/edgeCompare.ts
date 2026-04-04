@@ -27,6 +27,9 @@ export interface CompareModelRow {
 
 export interface CompareModelsResponse {
   input_source: string
+  /** 회전 보정 허용 상한 (°), 이하이면 deskew 후 ROI 검사 */
+  max_deskew_angle_deg: number
+  /** 레거시 필드 (과거 정렬 FAIL 임계값). 파이프라인은 max_deskew_angle_deg 기준 */
   max_angle_error_deg: number
   conf: number
   rows: CompareModelRow[]

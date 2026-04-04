@@ -3,8 +3,8 @@
  * (PC 브라우저 → Vite /edge 프록시 → 라즈베리파이 :8000)
  */
 
-import { useState } from 'react'
-import { GitCompare, Loader2, AlertCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { GitCompare, Loader2, AlertCircle, X } from 'lucide-react'
 import { postCompareModels } from '@/api/edgeApi'
 import type { CompareModelsResponse } from '@/types/edgeCompare'
 
@@ -23,6 +23,16 @@ export default function ModelComparePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<CompareModelsResponse | null>(null)
+  const [previewLightbox, setPreviewLightbox] = useState<{ src: string; title: string } | null>(null)
+
+  useEffect(() => {
+    if (!previewLightbox) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPreviewLightbox(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [previewLightbox])
 
   const run = async () => {
     const weights = parseWeights(weightsText)
@@ -59,7 +69,7 @@ export default function ModelComparePage() {
   }
 
   return (
-    <div className="p-6 space-y-6 overflow-y-auto h-full max-w-5xl">
+    <div className="p-6 space-y-6 overflow-y-auto h-full max-w-[min(100%,96rem)]">
       <div>
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
           <GitCompare size={22} className="text-indigo-400" />
@@ -142,7 +152,8 @@ export default function ModelComparePage() {
           <p className="text-xs text-gray-500">
             입력: <span className="text-gray-400">{result.input_source}</span>
             {' · '}
-            conf {result.conf}, 정렬 허용 각도 ≤ {result.max_angle_error_deg}°
+            conf {result.conf}, 회전 보정 한도 ≤{' '}
+            {result.max_deskew_angle_deg ?? result.max_angle_error_deg}°
           </p>
           <div className="overflow-x-auto rounded-lg border border-gray-800">
             <table className="w-full text-sm text-left">
@@ -176,25 +187,40 @@ export default function ModelComparePage() {
           </div>
 
           <div>
-            <h3 className="text-sm font-medium text-gray-300 mb-2">피듀셜 검출 미리보기 (동일 촬영)</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <h3 className="text-sm font-medium text-gray-300 mb-1">피듀셜 검출 미리보기 (동일 촬영)</h3>
+            <p className="text-[11px] text-gray-500 mb-3">이미지를 클릭하면 화면에 맞게 크게 볼 수 있습니다.</p>
+            <div className="flex flex-col gap-6">
               {result.rows.map((r, i) => (
                 <div
                   key={`preview-${r.weightsLabel}-${i}`}
                   className="rounded-lg border border-gray-800 bg-gray-950/50 overflow-hidden"
                 >
-                  <p className="px-2 py-1.5 text-[11px] font-mono text-gray-400 truncate border-b border-gray-800/80">
+                  <p className="px-3 py-2 text-xs font-mono text-gray-300 border-b border-gray-800/80 break-all">
                     {r.weightsLabel}
                   </p>
                   {r.fiducial_preview_path ? (
-                    <img
-                      src={`/captures/${r.fiducial_preview_path}`}
-                      alt={`피듀셜 검출 ${r.weightsLabel}`}
-                      className="w-full h-auto object-contain bg-black/40"
-                      loading="lazy"
-                    />
+                    <button
+                      type="button"
+                      className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset"
+                      onClick={() =>
+                        setPreviewLightbox({
+                          src: `/captures/${r.fiducial_preview_path}`,
+                          title: r.weightsLabel,
+                        })
+                      }
+                      aria-label={`${r.weightsLabel} 미리보기 크게 보기`}
+                    >
+                      <div className="flex justify-center bg-black/50 p-1 sm:p-2">
+                        <img
+                          src={`/captures/${r.fiducial_preview_path}`}
+                          alt={`피듀셜 검출 ${r.weightsLabel}`}
+                          className="w-full max-w-full h-auto max-h-[min(85vh,920px)] object-contain cursor-zoom-in"
+                          loading="lazy"
+                        />
+                      </div>
+                    </button>
                   ) : (
-                    <div className="aspect-video flex items-center justify-center text-xs text-gray-600 px-2">
+                    <div className="min-h-[12rem] flex items-center justify-center text-xs text-gray-600 px-2">
                       미리보기 없음 (엣지 최신 코드 필요)
                     </div>
                   )}
@@ -204,6 +230,36 @@ export default function ModelComparePage() {
           </div>
 
           <p className="text-[11px] text-gray-600 leading-relaxed">{result.note}</p>
+        </div>
+      )}
+
+      {previewLightbox && (
+        <div
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="미리보기 확대"
+          onClick={() => setPreviewLightbox(null)}
+        >
+          <div className="flex w-full max-w-[min(100vw,120rem)] items-center justify-between gap-2 px-1 pb-2 text-gray-300">
+            <p className="text-xs font-mono truncate pr-2" title={previewLightbox.title}>
+              {previewLightbox.title}
+            </p>
+            <button
+              type="button"
+              className="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-white/10 hover:text-white"
+              onClick={() => setPreviewLightbox(null)}
+              aria-label="닫기"
+            >
+              <X size={22} />
+            </button>
+          </div>
+          <img
+            src={previewLightbox.src}
+            alt=""
+            className="max-h-[min(92vh,1200px)] max-w-full w-auto object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>

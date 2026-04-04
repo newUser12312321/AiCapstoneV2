@@ -1,48 +1,42 @@
 """
 피듀셜 마크(Fiducial Mark) 정렬 검사 모듈
 
-PCB 기판의 두 피듀셜 마크를 기준으로 수평 정렬 오차 각도를 계산하고
-허용 범위 이내인지 판별한다.
+PCB 기판의 두 피듀셜 마크를 기준으로 수평 대비 기울기(°)를 계산하고,
+허용 범위(MAX_DESKEW_ANGLE_DEG) 안이면 이후 단계에서 이미지 회전 보정(deskew)을 적용한다.
 
 정렬 원리:
-  - 마크1(좌하단)과 마크2(우하단) 두 점을 연결한 벡터를 구한다.
-  - 이 벡터와 수평축(x축) 사이의 각도를 arctan2로 계산한다.
-  - 각도가 MAX_ANGLE_ERROR_DEG(기본 3°) 이하면 PASS, 초과면 FAIL.
+  - 마크1·마크2 중심을 연결한 벡터와 수평축 사이 각도를 arctan2로 계산한다.
+  - 각도가 MAX_DESKEW_ANGLE_DEG(기본 45°) 초과면 FAIL(보정 불가로 간주).
 
     마크1 ●────────────● 마크2
            ←── 이 선의 기울기 계산 ──→
 """
 
-import math
 import logging
-from typing import Optional
+import math
 
+import cv2
 import numpy as np
 
 from config.settings import settings
-from models.schemas import AlignmentResult, DetectionItem
+from models.schemas import AlignmentResult, BoundingBox, DetectionItem
 
 logger = logging.getLogger(__name__)
 
 
 def compute_alignment(
     fiducials: list[DetectionItem],
-    max_angle_error_deg: float = settings.MAX_ANGLE_ERROR_DEG,
+    max_deskew_deg: float = settings.MAX_DESKEW_ANGLE_DEG,
 ) -> AlignmentResult:
     """
-    탐지된 피듀셜 마크 목록으로 정렬 오차를 계산한다.
+    탐지된 피듀셜 마크 목록으로 기울기 각도(°)를 계산한다.
 
     Args:
-        fiducials:          YOLO가 탐지한 피듀셜 마크 DetectionItem 목록
-        max_angle_error_deg: 허용 오차 각도 상한 (기본: settings에서 로드)
+        fiducials:       YOLO가 탐지한 피듀셜 마크 DetectionItem 목록
+        max_deskew_deg:  이 각도(°) 이하일 때만 회전 보정 후 결함 검사 진행 (초과 시 FAIL)
 
     Returns:
-        AlignmentResult: 정렬 여부, 두 마크 위치, 오차 각도를 담은 결과 객체
-
-    처리 케이스:
-        - 마크가 0개: 탐지 실패 → FAIL
-        - 마크가 1개: 단일 마크로 각도 계산 불가 → FAIL
-        - 마크가 2개 이상: 가장 신뢰도 높은 2개 사용 → 오차 계산
+        AlignmentResult: is_aligned는 「2개 마크 + 각도 ≤ max_deskew_deg」 여부.
     """
 
     # ── Case 1: 마크 탐지 실패 ────────────────────────────────────────────────
@@ -73,23 +67,115 @@ def compute_alignment(
     angle_deg = abs(math.degrees(angle_rad))
 
     logger.info(
-        "[정렬] 마크1=(%d,%d), 마크2=(%d,%d), 오차=%.2f°, 허용=%.1f°",
+        "[정렬] 마크1=(%d,%d), 마크2=(%d,%d), |기울기|=%.2f°, 보정가능한도=%.1f°",
         mark_a.center_x, mark_a.center_y,
         mark_b.center_x, mark_b.center_y,
-        angle_deg, max_angle_error_deg,
+        angle_deg, max_deskew_deg,
     )
 
-    # 허용 오차 범위 내인지 판정
-    is_aligned = angle_deg <= max_angle_error_deg
+    is_aligned = angle_deg <= max_deskew_deg
 
     if not is_aligned:
-        logger.warning("[정렬] 오차 초과 → FAIL (%.2f° > %.1f°)", angle_deg, max_angle_error_deg)
+        logger.warning("[정렬] 기울기 한도 초과 → FAIL (%.2f° > %.1f°)", angle_deg, max_deskew_deg)
 
     return AlignmentResult(
         is_aligned=is_aligned,
         fiducial1=mark_a,
         fiducial2=mark_b,
         angle_error_deg=round(angle_deg, 3),
+    )
+
+
+def _bbox_after_affine(bbox: BoundingBox, m23: np.ndarray) -> BoundingBox:
+    """axis-aligned bbox의 네 꼭짓점을 affine 변환한 뒤 축정렬 최소 사각형."""
+    corners = np.array(
+        [
+            [bbox.x, bbox.y, 1.0],
+            [bbox.x + bbox.width, bbox.y, 1.0],
+            [bbox.x + bbox.width, bbox.y + bbox.height, 1.0],
+            [bbox.x, bbox.y + bbox.height, 1.0],
+        ],
+        dtype=np.float64,
+    ).T
+    pts = m23 @ corners
+    xs, ys = pts[0], pts[1]
+    x_min, x_max = float(xs.min()), float(xs.max())
+    y_min, y_max = float(ys.min()), float(ys.max())
+    return BoundingBox(
+        x=max(0, int(x_min)),
+        y=max(0, int(y_min)),
+        width=max(1, int(round(x_max - x_min))),
+        height=max(1, int(round(y_max - y_min))),
+    )
+
+
+def _clip_bbox_to_image(bbox: BoundingBox, w: int, h: int) -> BoundingBox:
+    x = max(0, min(bbox.x, w - 1))
+    y = max(0, min(bbox.y, h - 1))
+    bw = max(1, min(bbox.width, w - x))
+    bh = max(1, min(bbox.height, h - y))
+    return BoundingBox(x=x, y=y, width=bw, height=bh)
+
+
+def deskew_image_by_fiducial_angle(
+    image: np.ndarray,
+    alignment: AlignmentResult,
+    min_deskew_deg: float = settings.MIN_DESKEW_ANGLE_DEG,
+) -> tuple[np.ndarray, AlignmentResult]:
+    """
+    두 피듀셜을 잇는 선이 수평이 되도록 이미지를 회전한다 (캔버스 확장).
+
+    alignment의 fiducial1/2는 원본 프레임 좌표계여야 한다.
+    반환 alignment는 회전 후 이미지 좌표계로 갱신되며 angle_error_deg는 0에 가깝게 둔다.
+    """
+    if alignment.fiducial1 is None or alignment.fiducial2 is None:
+        return image, alignment
+
+    mark_a = alignment.fiducial1
+    mark_b = alignment.fiducial2
+    dx = mark_b.center_x - mark_a.center_x
+    dy = mark_b.center_y - mark_a.center_y
+    angle_rad = math.atan2(-dy, dx)
+    angle_deg = math.degrees(angle_rad)
+
+    if abs(angle_deg) < min_deskew_deg:
+        logger.info("[정렬] |기울기| %.4f° < %.2f° — 회전 보정 생략", abs(angle_deg), min_deskew_deg)
+        return image, alignment
+
+    h, w = image.shape[:2]
+    center = (w / 2.0, h / 2.0)
+    rot_deg = -angle_deg
+
+    m23 = cv2.getRotationMatrix2D(center, rot_deg, 1.0)
+    cos = abs(m23[0, 0])
+    sin = abs(m23[0, 1])
+    new_w = int((h * sin) + (w * cos))
+    new_h = int((h * cos) + (w * sin))
+    m23[0, 2] += (new_w / 2) - center[0]
+    m23[1, 2] += (new_h / 2) - center[1]
+
+    rotated = cv2.warpAffine(
+        image,
+        m23,
+        (new_w, new_h),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0),
+    )
+
+    b1 = _clip_bbox_to_image(_bbox_after_affine(mark_a.bbox, m23), new_w, new_h)
+    b2 = _clip_bbox_to_image(_bbox_after_affine(mark_b.bbox, m23), new_w, new_h)
+
+    new_a = DetectionItem(defect_type=mark_a.defect_type, confidence=mark_a.confidence, bbox=b1)
+    new_b = DetectionItem(defect_type=mark_b.defect_type, confidence=mark_b.confidence, bbox=b2)
+
+    logger.info("[정렬] 회전 보정 적용: %.2f° → 캔버스 %dx%d", angle_deg, new_w, new_h)
+
+    return rotated, AlignmentResult(
+        is_aligned=True,
+        fiducial1=new_a,
+        fiducial2=new_b,
+        angle_error_deg=0.0,
     )
 
 

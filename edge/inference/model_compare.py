@@ -14,7 +14,7 @@ import cv2
 
 from config.settings import settings
 from capture.camera import CameraCapture
-from inference.alignment import compute_alignment, crop_inspection_roi
+from inference.alignment import compute_alignment, crop_inspection_roi, deskew_image_by_fiducial_angle
 from inference.yolo_detector import YoloDetector
 
 logger = logging.getLogger(__name__)
@@ -160,14 +160,17 @@ def run_unified(frame: Any, weights: Path, conf: float, run_id: str) -> dict[str
     det = YoloDetector(str(weights), confidence_threshold=conf)
     det.load()
     fiducials, t1 = det.detect_fiducials(frame)
+    preview_frame = frame.copy()
     alignment = compute_alignment(fiducials)
+    measured_deg = float(alignment.angle_error_deg)
     t2 = 0
     defects: list = []
     if alignment.is_aligned:
+        frame, alignment = deskew_image_by_fiducial_angle(frame, alignment)
         roi = crop_inspection_roi(frame, alignment)
         defects, t2 = det.detect_defects(roi)
     confs = [d.confidence for d in defects]
-    drawn = _annotate_fiducials(frame, fiducials)
+    drawn = _annotate_fiducials(preview_frame, fiducials)
     preview_name = _save_fiducial_preview(drawn, run_id, weights.name)
     return {
         "weights": str(weights),
@@ -175,7 +178,7 @@ def run_unified(frame: Any, weights: Path, conf: float, run_id: str) -> dict[str
         "mode": "unified",
         "fiducial_count": len(fiducials),
         "aligned": alignment.is_aligned,
-        "angle_error_deg": round(float(alignment.angle_error_deg), 3),
+        "angle_error_deg": round(measured_deg, 3),
         "defect_count": len(defects),
         "defect_conf_mean": round(sum(confs) / len(confs), 4) if confs else None,
         "defect_conf_max": round(max(confs), 4) if confs else None,
@@ -190,17 +193,20 @@ def run_separate(frame: Any, w_fid: Path, w_def: Path, conf: float, run_id: str)
     d1 = YoloDetector(str(w_fid), confidence_threshold=conf)
     d1.load()
     fiducials, t1 = d1.detect_fiducials(frame)
+    preview_frame = frame.copy()
     alignment = compute_alignment(fiducials)
+    measured_deg = float(alignment.angle_error_deg)
     t2 = 0
     defects: list = []
     if alignment.is_aligned:
+        frame, alignment = deskew_image_by_fiducial_angle(frame, alignment)
         roi = crop_inspection_roi(frame, alignment)
         d2 = YoloDetector(str(w_def), confidence_threshold=conf)
         d2.load()
         defects, t2 = d2.detect_defects(roi)
     confs = [d.confidence for d in defects]
     label = f"{w_fid.name} + {w_def.name}"
-    drawn = _annotate_fiducials(frame, fiducials)
+    drawn = _annotate_fiducials(preview_frame, fiducials)
     preview_name = _save_fiducial_preview(drawn, run_id, label.replace(" ", "_"))
     return {
         "weights": label,
@@ -208,7 +214,7 @@ def run_separate(frame: Any, w_fid: Path, w_def: Path, conf: float, run_id: str)
         "mode": "separate",
         "fiducial_count": len(fiducials),
         "aligned": alignment.is_aligned,
-        "angle_error_deg": round(float(alignment.angle_error_deg), 3),
+        "angle_error_deg": round(measured_deg, 3),
         "defect_count": len(defects),
         "defect_conf_mean": round(sum(confs) / len(confs), 4) if confs else None,
         "defect_conf_max": round(max(confs), 4) if confs else None,

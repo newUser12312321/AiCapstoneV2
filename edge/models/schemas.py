@@ -70,7 +70,9 @@ class AlignmentResult(BaseModel):
     1차 피듀셜 마크 정렬 검사 결과.
     두 마크의 좌표와 계산된 오차 각도를 담는다.
     """
-    is_aligned: bool = Field(description="정렬 허용 오차 이내 여부")
+    is_aligned: bool = Field(
+        description="피듀셜 2개·기울기 한도 내 여부(엣지: MAX_DESKEW_ANGLE_DEG 이하이면 보정 가능)"
+    )
     fiducial1: Optional[DetectionItem] = Field(default=None, description="1번 마크 탐지 결과")
     fiducial2: Optional[DetectionItem] = Field(default=None, description="2번 마크 탐지 결과")
     angle_error_deg: float = Field(default=0.0, description="수평 기준 오차 각도 (°)")

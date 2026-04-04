@@ -104,6 +104,7 @@ async def compare_models_endpoint(body: CompareModelsBody) -> dict[str, Any]:
 
     return {
         "input_source": src if src else "camera",
+        "max_deskew_angle_deg": settings.MAX_DESKEW_ANGLE_DEG,
         "max_angle_error_deg": settings.MAX_ANGLE_ERROR_DEG,
         "conf": body.conf if body.conf is not None else settings.YOLO_CONFIDENCE_THRESHOLD,
         "rows": rows,
