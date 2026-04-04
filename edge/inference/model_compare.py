@@ -30,23 +30,48 @@ def _safe_stem(name: str) -> str:
 
 
 def _annotate_fiducials(frame: Any, fiducials: list) -> Any:
-    """BGR 프레임에 피듀셜 박스·conf 텍스트 오버레이."""
+    """BGR 프레임에 피듀셜 박스·F1/F2·신뢰도 오버레이 (대비 강화)."""
     out = frame.copy()
-    color = (255, 255, 0)  # BGR: 청록에 가까운 색
-    for d in fiducials:
+    # 녹색 기판 위에서 잘 보이도록 노랑 + 검은 외곽
+    box_inner = (0, 255, 255)  # BGR 밝은 노랑
+    box_outline = (0, 0, 0)
+    line_thick = 3
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.75
+    txt_thick = 2
+
+    # 왼쪽→오른쪽 순으로 F1, F2 라벨
+    indexed = list(enumerate(fiducials))
+    indexed.sort(key=lambda t: t[1].bbox.x + t[1].bbox.width / 2)
+
+    for rank, (_, d) in enumerate(indexed):
         b = d.bbox
-        x1, y1 = b.x, b.y
-        x2, y2 = b.x + b.width, b.y + b.height
-        cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
-        txt = f"{d.confidence:.2f}"
+        x1, y1 = int(b.x), int(b.y)
+        x2, y2 = int(b.x + b.width), int(b.y + b.height)
+        # 검은 두꺼운 외곽 + 안쪽 색 박스
+        cv2.rectangle(out, (x1, y1), (x2, y2), box_outline, line_thick + 2)
+        cv2.rectangle(out, (x1, y1), (x2, y2), box_inner, line_thick)
+        label = f"F{rank + 1} {d.confidence * 100:.0f}%"
+        (tw, th), _ = cv2.getTextSize(label, font, font_scale, txt_thick)
+        pad = 6
+        # 라벨 박스: putText 기준선(y) = text_baseline
+        if y1 >= th + pad + 8:
+            text_baseline = y1 - pad
+        else:
+            text_baseline = y2 + th + pad
+        tx = x1
+        y0 = int(text_baseline - th - 2)
+        y1b = int(text_baseline + 4)
+        cv2.rectangle(out, (tx, y0), (tx + tw + pad * 2, y1b), (0, 0, 0), -1)
+        cv2.rectangle(out, (tx, y0), (tx + tw + pad * 2, y1b), box_inner, 1)
         cv2.putText(
             out,
-            txt,
-            (x1, max(18, y1 - 4)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            color,
-            2,
+            label,
+            (tx + pad, text_baseline),
+            font,
+            font_scale,
+            box_inner,
+            txt_thick,
             cv2.LINE_AA,
         )
     if not fiducials:
