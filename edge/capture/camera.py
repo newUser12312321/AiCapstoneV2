@@ -18,7 +18,13 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from config.settings import settings, CAPTURES_DIR
+try:
+    from config.settings import settings, CAPTURES_DIR
+except ImportError:
+    # 구버전 settings.py (CAPTURES_DIR 없음) 호환
+    from config.settings import settings
+
+    CAPTURES_DIR = Path(__file__).resolve().parent.parent / "captures"
 
 logger = logging.getLogger(__name__)
 
