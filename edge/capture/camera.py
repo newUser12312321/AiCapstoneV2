@@ -26,6 +26,23 @@ CAPTURES_DIR = Path(__file__).resolve().parent.parent / "captures"
 logger = logging.getLogger(__name__)
 
 
+def _try_open_video_index(index: int) -> Optional[cv2.VideoCapture]:
+    """지정 인덱스(및 흔한 백엔드)로 VideoCapture 시도. 성공 시 열린 캡처만 반환."""
+    dev_path = f"/dev/video{index}"
+    factories: list[tuple[str, Callable[[], cv2.VideoCapture]]] = [
+        ("CAP_V4L2+index", lambda i=index: cv2.VideoCapture(i, cv2.CAP_V4L2)),
+        ("default+index", lambda i=index: cv2.VideoCapture(i)),
+        ("CAP_V4L2+path", lambda p=dev_path: cv2.VideoCapture(p, cv2.CAP_V4L2)),
+        ("default+path", lambda p=dev_path: cv2.VideoCapture(p)),
+    ]
+    for _label, factory in factories:
+        cap = factory()
+        if cap.isOpened():
+            return cap
+        cap.release()
+    return None
+
+
 class CameraCapture:
     """
     웹캠 연결·설정·캡처를 담당하는 클래스.
@@ -60,29 +77,40 @@ class CameraCapture:
 
         초점은 .env의 CAMERA_FOCUS_AUTO / CAMERA_FOCUS_ABSOLUTE 로 제어한다.
         """
-        logger.info("[카메라] 장치 %d 열기 시도 (%dx%d)", self.device_index, self.width, self.height)
+        requested = self.device_index
+        logger.info("[카메라] 장치 %d 열기 시도 (%dx%d)", requested, self.width, self.height)
 
-        # 여러 백엔드 순차 시도 (일부 환경에서 CAP_V4L2 만 실패하는 경우 있음)
-        dev_path = f"/dev/video{self.device_index}"
-        attempts: list[tuple[str, Callable[[], cv2.VideoCapture]]] = [
-            ("CAP_V4L2+index", lambda: cv2.VideoCapture(self.device_index, cv2.CAP_V4L2)),
-            ("default+index", lambda: cv2.VideoCapture(self.device_index)),
-            ("CAP_V4L2+path", lambda: cv2.VideoCapture(dev_path, cv2.CAP_V4L2)),
-            ("default+path", lambda: cv2.VideoCapture(dev_path)),
-        ]
+        # Pi 5 등에서는 /dev/video0 이 없고 USB 웹캠이 video1·2 인 경우가 많음.
+        # pispbe·libcamera 노드는 video10+ 이라, USB 우선(1,2) 후 (10,11,12) 순으로 시도.
+        try_order: list[int] = [requested]
+        for x in (1, 2, 10, 11, 12, 0):
+            if x not in try_order:
+                try_order.append(x)
+
         self._cap = None
-        for label, factory in attempts:
-            cap = factory()
-            if cap.isOpened():
+        for idx in try_order:
+            cap = _try_open_video_index(idx)
+            if cap is not None:
                 self._cap = cap
-                logger.info("[카메라] 열기 성공 (%s)", label)
+                self.device_index = idx
+                if idx != requested:
+                    logger.warning(
+                        "[카메라] .env 는 %d 였으나 장치 %d (/dev/video%d) 에서 열었습니다.",
+                        requested,
+                        idx,
+                        idx,
+                    )
+                else:
+                    logger.info("[카메라] 장치 %d 열기 성공", idx)
                 break
-            cap.release()
 
         if self._cap is None or not self._cap.isOpened():
+            dev_path = f"/dev/video{requested}"
             raise RuntimeError(
-                f"카메라 장치 {self.device_index} ({dev_path})를 열 수 없습니다. "
-                "다른 프로세스 점유 여부(fuser), video 그룹, 연결을 확인하세요."
+                f"카메라 장치 {requested} ({dev_path})를 열 수 없습니다. "
+                "USB/카메라 모듈 연결, `sudo fuser -v /dev/video*`, "
+                "`groups`(video 포함 여부), `v4l2-ctl --list-devices` 로 확인하세요. "
+                "모델 비교만 할 때는 캡처 이미지(edge/captures)를 지정하면 카메라 없이 가능합니다."
             )
 
         # 해상도 설정 (1920×1080 → 1080p)

@@ -22,18 +22,23 @@ from models.schemas import BoundingBox, DetectionItem
 logger = logging.getLogger(__name__)
 
 
-def _matches_target_class(class_name: str, target_class: str, num_model_classes: int) -> bool:
+def _is_fiducial_class_name(class_name: str, num_model_classes: int) -> bool:
     """
-    피듀셜은 data.yaml 에서 fiducial / FIDUCIAL 등 대소문자가 달라도 인정.
-    단일 클래스 학습(피듀셜만)이면 클래스명이 달라도 인덱스 0 하나뿐이므로 허용.
+    Stage1 피듀셜 필터: CVAT/팀마다 fiducial, FIDUCIAL, fiducial_mark 등 이름이 달라서
+    'fiducial' 부분 문자열로도 매칭. 단일 클래스 모델은 그 한 클래스를 피듀셜로 간주.
     """
-    if target_class != "FIDUCIAL":
-        return class_name == target_class
-    if class_name.lower() == "fiducial":
+    n = class_name.lower().strip()
+    if n == "fiducial" or "fiducial" in n:
         return True
     if num_model_classes == 1:
         return True
     return False
+
+
+def _matches_target_class(class_name: str, target_class: str, num_model_classes: int) -> bool:
+    if target_class != "FIDUCIAL":
+        return class_name == target_class
+    return _is_fiducial_class_name(class_name, num_model_classes)
 
 
 # 가중치 파일이 없을 때 개발 환경에서 사용할 더미 클래스 레이블
@@ -198,5 +203,5 @@ class YoloDetector:
         # 결함 클래스 중 하나라도 탐지되면 반환 (target_class=None → 전체)
         defects, ms = self.detect(roi, target_class=None)
         # 피듀셜 마크 결과는 결함 목록에서 제외
-        defects = [d for d in defects if d.defect_type.lower() != "fiducial"]
+        defects = [d for d in defects if "fiducial" not in d.defect_type.lower()]
         return defects, ms
