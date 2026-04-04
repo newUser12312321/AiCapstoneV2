@@ -21,6 +21,8 @@ export interface CompareModelRow {
   infer_ms_stage1: number
   infer_ms_stage2: number
   infer_ms_total: number
+  /** 엣지 captures/compare_*.jpg 파일명 — 브라우저는 `/captures/<파일명>` 으로 로드 */
+  fiducial_preview_path?: string | null
 }
 
 export interface CompareModelsResponse {

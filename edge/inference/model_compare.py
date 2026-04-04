@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -18,6 +20,62 @@ from inference.yolo_detector import YoloDetector
 logger = logging.getLogger(__name__)
 
 _EDGE_ROOT = Path(__file__).resolve().parent.parent
+_CAPTURES_DIR = _EDGE_ROOT / "captures"
+
+
+def _safe_stem(name: str) -> str:
+    base = Path(name).name
+    s = re.sub(r"[^a-zA-Z0-9._-]+", "_", base)[:100]
+    return s or "model"
+
+
+def _annotate_fiducials(frame: Any, fiducials: list) -> Any:
+    """BGR 프레임에 피듀셜 박스·conf 텍스트 오버레이."""
+    out = frame.copy()
+    color = (255, 255, 0)  # BGR: 청록에 가까운 색
+    for d in fiducials:
+        b = d.bbox
+        x1, y1 = b.x, b.y
+        x2, y2 = b.x + b.width, b.y + b.height
+        cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
+        txt = f"{d.confidence:.2f}"
+        cv2.putText(
+            out,
+            txt,
+            (x1, max(18, y1 - 4)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            color,
+            2,
+            cv2.LINE_AA,
+        )
+    if not fiducials:
+        cv2.putText(
+            out,
+            "FIDUCIAL 0",
+            (24, 48),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (100, 100, 255),
+            2,
+            cv2.LINE_AA,
+        )
+    return out
+
+
+def _save_fiducial_preview(frame_drawn: Any, run_id: str, label: str) -> str:
+    """
+    captures/compare_{run_id}_{label}.jpg 저장.
+    Returns:
+        파일명만 (프론트 /captures/파일명)
+    """
+    stem = _safe_stem(label)
+    fname = f"compare_{run_id}_{stem}.jpg"
+    path = _CAPTURES_DIR / fname
+    _CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(path), frame_drawn, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    logger.info("[model_compare] 피듀셜 미리보기 저장: %s", fname)
+    return fname
 
 
 def resolve_safe_weights_path(user_path: str) -> Path:
@@ -98,7 +156,7 @@ def load_frame(image_path: str | None, camera_index: int) -> tuple[Any, str | No
     return frame, None
 
 
-def run_unified(frame: Any, weights: Path, conf: float) -> dict[str, Any]:
+def run_unified(frame: Any, weights: Path, conf: float, run_id: str) -> dict[str, Any]:
     det = YoloDetector(str(weights), confidence_threshold=conf)
     det.load()
     fiducials, t1 = det.detect_fiducials(frame)
@@ -109,6 +167,8 @@ def run_unified(frame: Any, weights: Path, conf: float) -> dict[str, Any]:
         roi = crop_inspection_roi(frame, alignment)
         defects, t2 = det.detect_defects(roi)
     confs = [d.confidence for d in defects]
+    drawn = _annotate_fiducials(frame, fiducials)
+    preview_name = _save_fiducial_preview(drawn, run_id, weights.name)
     return {
         "weights": str(weights),
         "weightsLabel": weights.name,
@@ -122,10 +182,11 @@ def run_unified(frame: Any, weights: Path, conf: float) -> dict[str, Any]:
         "infer_ms_stage1": t1,
         "infer_ms_stage2": t2,
         "infer_ms_total": t1 + t2,
+        "fiducial_preview_path": preview_name,
     }
 
 
-def run_separate(frame: Any, w_fid: Path, w_def: Path, conf: float) -> dict[str, Any]:
+def run_separate(frame: Any, w_fid: Path, w_def: Path, conf: float, run_id: str) -> dict[str, Any]:
     d1 = YoloDetector(str(w_fid), confidence_threshold=conf)
     d1.load()
     fiducials, t1 = d1.detect_fiducials(frame)
@@ -139,6 +200,8 @@ def run_separate(frame: Any, w_fid: Path, w_def: Path, conf: float) -> dict[str,
         defects, t2 = d2.detect_defects(roi)
     confs = [d.confidence for d in defects]
     label = f"{w_fid.name} + {w_def.name}"
+    drawn = _annotate_fiducials(frame, fiducials)
+    preview_name = _save_fiducial_preview(drawn, run_id, label.replace(" ", "_"))
     return {
         "weights": label,
         "weightsLabel": label,
@@ -152,6 +215,7 @@ def run_separate(frame: Any, w_fid: Path, w_def: Path, conf: float) -> dict[str,
         "infer_ms_stage1": t1,
         "infer_ms_stage2": t2,
         "infer_ms_total": t1 + t2,
+        "fiducial_preview_path": preview_name,
     }
 
 
@@ -180,12 +244,13 @@ def compare_models(
     if image_path and image_path.strip():
         safe_image = str(resolve_safe_capture_path(image_path))
     frame, src = load_frame(safe_image, cam_idx)
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     rows: list[dict[str, Any]] = []
     if defect_resolved:
         for wf, wd in zip(resolved, defect_resolved, strict=True):
-            rows.append(run_separate(frame, wf, wd, conf))
+            rows.append(run_separate(frame, wf, wd, conf, run_id))
     else:
         for w in resolved:
-            rows.append(run_unified(frame, w, conf))
+            rows.append(run_unified(frame, w, conf, run_id))
 
     return rows, src

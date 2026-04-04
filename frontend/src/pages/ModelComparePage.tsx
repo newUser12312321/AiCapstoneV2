@@ -174,6 +174,35 @@ export default function ModelComparePage() {
               </tbody>
             </table>
           </div>
+
+          <div>
+            <h3 className="text-sm font-medium text-gray-300 mb-2">피듀셜 검출 미리보기 (동일 촬영)</h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {result.rows.map((r, i) => (
+                <div
+                  key={`preview-${r.weightsLabel}-${i}`}
+                  className="rounded-lg border border-gray-800 bg-gray-950/50 overflow-hidden"
+                >
+                  <p className="px-2 py-1.5 text-[11px] font-mono text-gray-400 truncate border-b border-gray-800/80">
+                    {r.weightsLabel}
+                  </p>
+                  {r.fiducial_preview_path ? (
+                    <img
+                      src={`/captures/${r.fiducial_preview_path}`}
+                      alt={`피듀셜 검출 ${r.weightsLabel}`}
+                      className="w-full h-auto object-contain bg-black/40"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="aspect-video flex items-center justify-center text-xs text-gray-600 px-2">
+                      미리보기 없음 (엣지 최신 코드 필요)
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <p className="text-[11px] text-gray-600 leading-relaxed">{result.note}</p>
         </div>
       )}
