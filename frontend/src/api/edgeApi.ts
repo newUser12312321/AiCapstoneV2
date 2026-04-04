@@ -1,30 +1,33 @@
 /**
- * 라즈베리파이 엣지 FastAPI 직접 호출 (Vite 프록시 /edge → VITE_EDGE_CAPTURE_URL)
+ * 라즈베리파이 FastAPI 엣지 API (Vite 프록시 `/edge` → VITE_EDGE_CAPTURE_URL)
  */
 
 import type { CompareModelsRequest, CompareModelsResponse } from '@/types/edgeCompare'
 
-async function parseError(res: Response): Promise<string> {
-  try {
-    const j = (await res.json()) as { detail?: string | { msg?: string }[] }
-    if (typeof j.detail === 'string') return j.detail
-    if (Array.isArray(j.detail)) return j.detail.map((d) => d.msg ?? '').join(', ')
-  } catch {
-    /* ignore */
+/**
+ * 수동 PCB 검사 1회 실행 (백그라운드). 결과는 Spring Boot DB에 적재된다.
+ */
+export async function triggerEdgeInspection(): Promise<{ message: string }> {
+  const res = await fetch('/edge/inspect/trigger', { method: 'POST' })
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(detail || `${res.status} ${res.statusText}`)
   }
-  return res.statusText || `HTTP ${res.status}`
+  return res.json() as Promise<{ message: string }>
 }
 
+/** 동일 장면으로 여러 YOLO 가중치 비교 */
 export async function postCompareModels(
   body: CompareModelsRequest
 ): Promise<CompareModelsResponse> {
   const res = await fetch('/edge/compare-models', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    throw new Error(await parseError(res))
+    const detail = await res.text()
+    throw new Error(detail || `${res.status} ${res.statusText}`)
   }
   return res.json() as Promise<CompareModelsResponse>
 }

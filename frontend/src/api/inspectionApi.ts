@@ -116,3 +116,10 @@ export const fetchInspectionsByPeriod = async (
   })
   return data
 }
+
+/**
+ * 검사 이력·결함 상세 전체 삭제 (대시보드 초기화).
+ */
+export const deleteAllInspections = async (): Promise<void> => {
+  await apiClient.delete('/inspections')
+}

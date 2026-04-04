@@ -30,6 +30,7 @@ import java.util.Map;
  * - GET    /api/inspections/stats    → 통계 요약
  * - GET    /api/inspections/stats/fiducial → 피듀셜 운영 지표 (기간 선택, 기본=오늘)
  * - GET    /api/inspections/period   → 기간 필터 조회
+ * - DELETE /api/inspections          → 전체 이력 삭제 (대시보드)
  *
  * @CrossOrigin: React 개발 서버(localhost:5173)의 CORS 요청을 허용한다.
  *               운영 배포 시에는 특정 도메인으로 제한할 것.
@@ -186,5 +187,17 @@ public class InspectionController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to) {
         log.debug("[GET /api/inspections/period] {} ~ {}", from, to);
         return ResponseEntity.ok(inspectionService.getInspectionsByPeriod(from, to));
+    }
+
+    /**
+     * 전체 검사 이력 및 결함 상세 삭제 (운영자 대시보드 초기화).
+     *
+     * <p>DELETE /api/inspections
+     */
+    @DeleteMapping
+    public ResponseEntity<Void> deleteAllInspections() {
+        log.warn("[DELETE /api/inspections] 전체 이력 삭제 요청");
+        inspectionService.deleteAllInspections();
+        return ResponseEntity.noContent().build();
     }
 }

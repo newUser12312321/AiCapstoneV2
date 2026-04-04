@@ -7,6 +7,7 @@ import com.inspection.dto.DefectDetailDto;
 import com.inspection.dto.FiducialOperationalStatsDto;
 import com.inspection.dto.InspectionRequestDto;
 import com.inspection.dto.InspectionResponseDto;
+import com.inspection.repository.DefectDetailRepository;
 import com.inspection.repository.InspectionLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +36,7 @@ import java.util.stream.Collectors;
 public class InspectionService {
 
     private final InspectionLogRepository inspectionLogRepository;
+    private final DefectDetailRepository defectDetailRepository;
 
     @Value("${inspection.fiducial.max-angle-error-deg:3.0}")
     private float maxAngleErrorDeg;
@@ -205,5 +207,16 @@ public class InspectionService {
                 .stream()
                 .map(InspectionResponseDto::from)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 검사 이력·결함 상세를 모두 삭제한다 (대시보드 초기화용).
+     * FK 순서: defect_detail → inspection_log
+     */
+    @Transactional
+    public void deleteAllInspections() {
+        defectDetailRepository.deleteAllInBatch();
+        inspectionLogRepository.deleteAllInBatch();
+        log.warn("[검사 이력] 전체 삭제 완료");
     }
 }
