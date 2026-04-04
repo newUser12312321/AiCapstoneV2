@@ -21,6 +21,17 @@ from models.schemas import BoundingBox, DetectionItem
 
 logger = logging.getLogger(__name__)
 
+# edge/inference/ → edge/ (CWD와 무관하게 weights/ 경로 해석)
+_EDGE_ROOT = Path(__file__).resolve().parent.parent
+
+
+def resolve_edge_weights_path(weights_path: str | Path) -> Path:
+    """`weights/best.pt` 등은 항상 edge/ 기준으로 해석한다 (프로세스 CWD 무관)."""
+    p = Path(weights_path)
+    if p.is_absolute():
+        return p
+    return (_EDGE_ROOT / p).resolve()
+
 
 def _is_fiducial_class_name(class_name: str, num_model_classes: int) -> bool:
     """
@@ -70,7 +81,7 @@ class YoloDetector:
         weights_path: str = settings.YOLO_WEIGHTS_PATH,
         confidence_threshold: float = settings.YOLO_CONFIDENCE_THRESHOLD,
     ) -> None:
-        self.weights_path = Path(weights_path)
+        self.weights_path = resolve_edge_weights_path(weights_path)
         self.confidence_threshold = confidence_threshold
         self._model = None   # 지연 로드(Lazy Load)
 

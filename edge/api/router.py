@@ -118,19 +118,39 @@ async def get_status() -> dict[str, Any]:
     카메라 설정, YOLO 모델 경로, GPIO 핀 설정 등
     현재 엣지 디바이스의 구성 정보를 반환한다.
     """
-    from pathlib import Path
-    weights_exists = Path(settings.YOLO_WEIGHTS_PATH).exists()
+    from inference.yolo_detector import resolve_edge_weights_path
+
+    sep = settings.USE_SEPARATE_MODELS
+    if sep:
+        wf = resolve_edge_weights_path(settings.YOLO_FIDUCIAL_WEIGHTS)
+        wd = resolve_edge_weights_path(settings.YOLO_DEFECT_WEIGHTS)
+        weights_loaded = wf.exists() and wd.exists()
+        yolo_block = {
+            "use_separate_models": True,
+            "fiducial_weights": str(wf),
+            "defect_weights": str(wd),
+            "fiducial_exists": wf.exists(),
+            "defect_exists": wd.exists(),
+            "weights_loaded": weights_loaded,
+            "weights_path": settings.YOLO_WEIGHTS_PATH,
+            "confidence_threshold": settings.YOLO_CONFIDENCE_THRESHOLD,
+        }
+    else:
+        wu = resolve_edge_weights_path(settings.YOLO_WEIGHTS_PATH)
+        weights_loaded = wu.exists()
+        yolo_block = {
+            "use_separate_models": False,
+            "weights_path": str(wu),
+            "weights_loaded": weights_loaded,
+            "confidence_threshold": settings.YOLO_CONFIDENCE_THRESHOLD,
+        }
 
     return {
         "camera": {
             "device_index": settings.CAMERA_DEVICE_INDEX,
             "resolution": f"{settings.CAMERA_WIDTH}x{settings.CAMERA_HEIGHT}",
         },
-        "yolo": {
-            "weights_path": settings.YOLO_WEIGHTS_PATH,
-            "weights_loaded": weights_exists,
-            "confidence_threshold": settings.YOLO_CONFIDENCE_THRESHOLD,
-        },
+        "yolo": yolo_block,
         "gpio": {
             "buzzer_pin": settings.BUZZER_PIN,
             "led_red_pin": settings.LED_RED_PIN,

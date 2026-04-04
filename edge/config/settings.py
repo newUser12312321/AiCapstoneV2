@@ -9,8 +9,13 @@ pydantic-settings를 사용하여 .env 파일 또는 OS 환경변수에서
     print(settings.SERVER_BASE_URL)
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+
+# edge/config/ → edge/.env (CWD와 무관하게 항상 이 파일을 읽음)
+_EDGE_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
@@ -81,7 +86,7 @@ class Settings(BaseSettings):
     # .env 파일을 자동으로 찾아 읽고, 대소문자를 구분하지 않는다.
     # extra='ignore': .env에 아직 모델에 없는 키가 있어도 기동 실패하지 않음(구버전 코드·부분 배포)
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_EDGE_DIR / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
