@@ -115,9 +115,15 @@ async def lifespan(app: FastAPI):
     if settings.USE_SEPARATE_MODELS:
         # 2-Stage 분리 모델: fiducial_best.pt + defect_best.pt 각각 로드
         logger.info("[시작] 2-Stage 분리 모델 로드 모드")
-        fiducial_detector = YoloDetector(weights_path=settings.YOLO_FIDUCIAL_WEIGHTS)
+        fiducial_detector = YoloDetector(
+            weights_path=settings.YOLO_FIDUCIAL_WEIGHTS,
+            confidence_threshold=settings.effective_fiducial_confidence(),
+        )
         fiducial_detector.load()
-        defect_detector = YoloDetector(weights_path=settings.YOLO_DEFECT_WEIGHTS)
+        defect_detector = YoloDetector(
+            weights_path=settings.YOLO_DEFECT_WEIGHTS,
+            confidence_threshold=settings.effective_defect_confidence(),
+        )
         defect_detector.load()
     else:
         # 단일 통합 모델: best.pt 하나로 모든 클래스 탐지

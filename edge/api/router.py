@@ -137,6 +137,8 @@ async def get_status() -> dict[str, Any]:
             "weights_loaded": weights_loaded,
             "weights_path": settings.YOLO_WEIGHTS_PATH,
             "confidence_threshold": settings.YOLO_CONFIDENCE_THRESHOLD,
+            "fiducial_confidence": settings.effective_fiducial_confidence(),
+            "defect_confidence": settings.effective_defect_confidence(),
         }
     else:
         wu = resolve_edge_weights_path(settings.YOLO_WEIGHTS_PATH)
@@ -146,6 +148,8 @@ async def get_status() -> dict[str, Any]:
             "weights_path": str(wu),
             "weights_loaded": weights_loaded,
             "confidence_threshold": settings.YOLO_CONFIDENCE_THRESHOLD,
+            "fiducial_confidence": settings.effective_fiducial_confidence(),
+            "defect_confidence": settings.effective_defect_confidence(),
         }
 
     return {

@@ -10,9 +10,10 @@ pydantic-settings를 사용하여 .env 파일 또는 OS 환경변수에서
 """
 
 from pathlib import Path
+from typing import Optional
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
 
 # edge/config/ → edge/.env (CWD와 무관하게 항상 이 파일을 읽음)
 _EDGE_DIR = Path(__file__).resolve().parent.parent
@@ -53,8 +54,13 @@ class Settings(BaseSettings):
     # 하위 호환: 단일 모델 사용 시 (두 Stage 합쳐서 학습한 경우)
     YOLO_WEIGHTS_PATH: str = Field(default="weights/best.pt")
 
-    # 이 값 이상의 confidence를 가진 탐지 결과만 사용
-    YOLO_CONFIDENCE_THRESHOLD: float = Field(default=0.5)
+    # 이 값 이상의 confidence (Stage 전용 값이 없을 때 피듀셜·결함 공통 기본)
+    YOLO_CONFIDENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    # Stage별 덮어쓰기 — None이면 YOLO_CONFIDENCE_THRESHOLD 사용
+    # 피듀셜은 낮게(0.25~0.4), 결함은 높게(0.5~0.65)로 나누는 것을 권장
+    YOLO_FIDUCIAL_CONFIDENCE_THRESHOLD: Optional[float] = Field(default=None)
+    YOLO_DEFECT_CONFIDENCE_THRESHOLD: Optional[float] = Field(default=None)
 
     # 2-Stage 분리 모델 사용 여부
     # True: fiducial_best.pt + defect_best.pt 각각 사용
@@ -85,6 +91,32 @@ class Settings(BaseSettings):
     MIN_DESKEW_ANGLE_DEG: float = Field(default=0.05)
     # 하위 호환·문서용: 과거 "허용 오차 초과 시 FAIL" 모드에서 사용. 파이프라인은 MAX_DESKEW_* 기준.
     MAX_ANGLE_ERROR_DEG: float = Field(default=3.0)
+
+    @field_validator("YOLO_FIDUCIAL_CONFIDENCE_THRESHOLD", "YOLO_DEFECT_CONFIDENCE_THRESHOLD", mode="before")
+    @classmethod
+    def _empty_conf_to_none(cls, v: object) -> object:
+        if v is None or v == "":
+            return None
+        return v
+
+    @field_validator("YOLO_FIDUCIAL_CONFIDENCE_THRESHOLD", "YOLO_DEFECT_CONFIDENCE_THRESHOLD")
+    @classmethod
+    def _stage_conf_range(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return None
+        if not 0.0 <= float(v) <= 1.0:
+            raise ValueError("Stage confidence must be between 0.0 and 1.0")
+        return float(v)
+
+    def effective_fiducial_confidence(self) -> float:
+        if self.YOLO_FIDUCIAL_CONFIDENCE_THRESHOLD is not None:
+            return float(self.YOLO_FIDUCIAL_CONFIDENCE_THRESHOLD)
+        return float(self.YOLO_CONFIDENCE_THRESHOLD)
+
+    def effective_defect_confidence(self) -> float:
+        if self.YOLO_DEFECT_CONFIDENCE_THRESHOLD is not None:
+            return float(self.YOLO_DEFECT_CONFIDENCE_THRESHOLD)
+        return float(self.YOLO_CONFIDENCE_THRESHOLD)
 
     # pydantic-settings 설정:
     # .env 파일을 자동으로 찾아 읽고, 대소문자를 구분하지 않는다.

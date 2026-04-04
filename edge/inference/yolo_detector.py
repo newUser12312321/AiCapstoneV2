@@ -122,6 +122,7 @@ class YoloDetector:
         self,
         image: np.ndarray,
         target_class: Optional[str] = None,
+        conf: Optional[float] = None,
     ) -> tuple[list[DetectionItem], int]:
         """
         이미지에서 객체를 탐지하고 DetectionItem 목록을 반환한다.
@@ -130,6 +131,7 @@ class YoloDetector:
             image:        OpenCV BGR 이미지 (H, W, 3)
             target_class: 이 이름의 클래스만 필터링. None이면 전체 반환.
                           예: "FIDUCIAL" → 피듀셜 마크만 반환
+            conf:         Ultralytics conf 임계값. None이면 인스턴스 기본값.
 
         Returns:
             (탐지 결과 목록, 추론 소요 시간 ms) 튜플
@@ -140,13 +142,14 @@ class YoloDetector:
             return [], 0
 
         start_time = time.perf_counter()
+        conf_threshold = self.confidence_threshold if conf is None else float(conf)
 
         # YOLO 추론 실행
         # verbose=False: 콘솔 출력 억제
         # conf: 신뢰도 임계값 이하는 자동으로 필터링
         results = self._model.predict(
             source=image,
-            conf=self.confidence_threshold,
+            conf=conf_threshold,
             verbose=False,
         )
 
@@ -199,7 +202,11 @@ class YoloDetector:
         Returns:
             (피듀셜 마크 목록, 추론 ms)
         """
-        return self.detect(image, target_class="FIDUCIAL")
+        return self.detect(
+            image,
+            target_class="FIDUCIAL",
+            conf=settings.effective_fiducial_confidence(),
+        )
 
     def detect_defects(self, roi: np.ndarray) -> tuple[list[DetectionItem], int]:
         """
@@ -212,7 +219,11 @@ class YoloDetector:
             (결함 목록, 추론 ms)
         """
         # 결함 클래스 중 하나라도 탐지되면 반환 (target_class=None → 전체)
-        defects, ms = self.detect(roi, target_class=None)
+        defects, ms = self.detect(
+            roi,
+            target_class=None,
+            conf=settings.effective_defect_confidence(),
+        )
         # 피듀셜 마크 결과는 결함 목록에서 제외
         defects = [d for d in defects if "fiducial" not in d.defect_type.lower()]
         return defects, ms
