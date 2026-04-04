@@ -43,7 +43,11 @@ from api.sender import ServerSender, create_dummy_packet
 from capture.camera import CameraCapture
 from config.settings import settings
 from hardware.gpio_controller import GpioController
-from inference.alignment import compute_alignment, crop_inspection_roi, deskew_image_by_fiducial_angle
+from inference.alignment import (
+    compute_alignment,
+    crop_inspection_roi_with_offset,
+    deskew_image_by_fiducial_angle,
+)
 from inference.yolo_detector import YoloDetector
 from models.schemas import (
     DefectPayload,
@@ -258,9 +262,20 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
         logger.info("[파이프라인] STEP 2-A′ — 기울기 보정 (deskew)")
         frame, alignment = deskew_image_by_fiducial_angle(frame, alignment)
 
+        # 보정 후 프레임을 저장 (뷰어·DB imagePath — 피듀셜/결함 오버레이와 좌표계 일치)
+        orig_p = Path(image_path)
+        deskew_path = str(orig_p.parent / f"{orig_p.stem}_deskew{orig_p.suffix}")
+        cv2.imwrite(deskew_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        logger.info("[파이프라인] 보정 후 이미지 저장: %s", deskew_path)
+
+        if alignment.fiducial1:
+            f1x, f1y = alignment.fiducial1.center_x, alignment.fiducial1.center_y
+        if alignment.fiducial2:
+            f2x, f2y = alignment.fiducial2.center_x, alignment.fiducial2.center_y
+
         # STEP 2-B: Stage 2 — ROI 크롭 후 결함 탐지
         logger.info("[파이프라인] STEP 2-B — 결함 탐지 (ROI)")
-        roi = crop_inspection_roi(frame, alignment)
+        roi, roi_x, roi_y = crop_inspection_roi_with_offset(frame, alignment)
         # 분리 모델이면 defect_detector, 통합 모델이면 detector 사용
         stage2 = defect_detector if settings.USE_SEPARATE_MODELS else detector
         defect_items, defect_ms = stage2.detect_defects(roi)
@@ -275,22 +290,22 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
             DefectPayload(
                 defect_type=d.defect_type,
                 confidence=d.confidence,
-                bbox_x=d.bbox.x,
-                bbox_y=d.bbox.y,
+                bbox_x=d.bbox.x + roi_x,
+                bbox_y=d.bbox.y + roi_y,
                 bbox_width=d.bbox.width,
                 bbox_height=d.bbox.height,
             )
             for d in defect_items
         ]
 
-        # 최종 패킷 구성
+        # 최종 패킷 구성 (imagePath = 보정 후 이미지)
         packet = _build_packet(
             result=final_result,
             f1x=f1x, f1y=f1y, f2x=f2x, f2y=f2y,
             angle_error=measured_skew_deg,
             inference_ms=fiducial_ms + defect_ms,
             defects=defect_payloads,
-            image_path=image_path,
+            image_path=deskew_path,
             pipeline_start=pipeline_start,
         )
 

@@ -6,25 +6,25 @@
  *
  * 동작 원리:
  *   1. useInspectionById(id)로 단건 검사 상세 데이터를 로드
- *   2. imagePath가 있으면 <img>로 캡처 이미지를 표시
- *      없으면 회색 플레이스홀더를 표시
+ *   2. imagePath가 `*_deskew.*`이면 같은 이름의 원본과 보정 후를 나란히 표시하고,
+ *      피듀셜/결함 오버레이는 보정 후에만 그린다.
  *   3. 이미지 위에 <svg>를 absolute 포지셔닝으로 겹쳐서
  *      각 결함의 bboxX/Y/Width/Height를 <rect>로 그린다.
- *   4. 이미지 원본 해상도(1920×1080)와 표시 크기의 비율을 계산하여
+ *   4. 로드된 이미지의 naturalWidth/Height(보정 후 캔버스 확대 등 반영)와 표시 크기 비율로
  *      좌표를 스케일 변환한다.
  *
  * 이미지가 없을 때는 더미 좌표 그리드를 대신 표시한다.
  */
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, type ReactNode } from 'react'
 import { X, ImageOff, AlertCircle } from 'lucide-react'
 import { useInspectionById } from '@/hooks/useInspectionData'
 import { DEFECT_COLOR, DEFECT_LABEL } from '@/types/inspection'
 import type { DefectDetail } from '@/types/inspection'
 
-// ── 원본 이미지 해상도 (라즈베리파이 캡처 설정과 동일하게 유지) ───────────────
-const ORIGINAL_WIDTH  = 1920
-const ORIGINAL_HEIGHT = 1080
+// ── 이미지 로드 전 기본값 (로드 후 naturalWidth/Height 사용) ───────────────
+const DEFAULT_REF_WIDTH = 1920
+const DEFAULT_REF_HEIGHT = 1080
 
 // ── 바운딩박스 단일 렌더러 ────────────────────────────────────────────────────
 
@@ -140,20 +140,50 @@ function resolveImageSrc(imagePath: string | null): string | null {
   return relative.startsWith('captures/') ? `/${relative}` : relative
 }
 
+/**
+ * 엣지 저장 규칙: `타임스탬프_deskew.jpg` ↔ 원본 `타임스탬프.jpg`
+ * 보정 전 이미지 URL을 유추한다. 패턴이 아니면 null (구 이력·정렬 FAIL 등).
+ */
+function deriveRawImagePathFromStored(stored: string | null): string | null {
+  if (!stored) return null
+  const p = stored.replace(/\\/g, '/')
+  const last = p.lastIndexOf('/')
+  const dir = last >= 0 ? p.slice(0, last + 1) : ''
+  const file = last >= 0 ? p.slice(last + 1) : p
+  const m = file.match(/^(.+)_deskew(\.[^.]+)$/)
+  if (!m) return null
+  return `${dir}${m[1]}${m[2]}`
+}
+
+function PanelBadge({ children }: { children: ReactNode }) {
+  return (
+    <span className="absolute top-2 left-2 z-10 text-[10px] font-semibold uppercase tracking-wide bg-black/65 text-gray-100 px-2 py-0.5 rounded border border-gray-700/80">
+      {children}
+    </span>
+  )
+}
+
 export default function DefectViewer({ inspectionId, onClose }: DefectViewerProps) {
   const { data: log, isLoading } = useInspectionById(inspectionId)
-  const imageSrc = resolveImageSrc(log?.imagePath ?? null)
+  const deskewSrc = resolveImageSrc(log?.imagePath ?? null)
+  const rawStored = deriveRawImagePathFromStored(log?.imagePath ?? null)
+  const rawSrc = rawStored ? resolveImageSrc(rawStored) : null
+  const showSideBySide = Boolean(rawSrc && deskewSrc)
 
-  /* 표시 중인 이미지 엘리먼트의 실제 렌더링 크기를 추적 */
+  /* 오버레이는 보정 후 이미지 기준 */
   const imgRef = useRef<HTMLImageElement>(null)
-  const [imgSize, setImgSize] = useState({ w: ORIGINAL_WIDTH, h: ORIGINAL_HEIGHT })
-  const [imgLoadError, setImgLoadError] = useState(false)
+  const [imgSize, setImgSize] = useState({ w: DEFAULT_REF_WIDTH, h: DEFAULT_REF_HEIGHT })
+  const [refPixels, setRefPixels] = useState({ w: DEFAULT_REF_WIDTH, h: DEFAULT_REF_HEIGHT })
+  const [deskewLoadError, setDeskewLoadError] = useState(false)
+  const [rawLoadError, setRawLoadError] = useState(false)
 
   useEffect(() => {
-    setImgLoadError(false)
-  }, [inspectionId, imageSrc])
+    setDeskewLoadError(false)
+    setRawLoadError(false)
+    setRefPixels({ w: DEFAULT_REF_WIDTH, h: DEFAULT_REF_HEIGHT })
+  }, [inspectionId, deskewSrc, rawSrc])
 
-  /* 이미지가 로드되거나 창 크기가 변경되면 실제 크기 재측정 */
+  /* 이미지가 로드되거나 창 크기가 변경되면 실제 크기 재측정 (보정 후 패널만) */
   useEffect(() => {
     const measure = () => {
       if (imgRef.current) {
@@ -166,11 +196,11 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
-  }, [log])
+  }, [log, showSideBySide])
 
-  /* 원본 → 표시 크기 스케일 비율 */
-  const scaleX = imgSize.w  / ORIGINAL_WIDTH
-  const scaleY = imgSize.h  / ORIGINAL_HEIGHT
+  /* 픽셀 좌표 → 표시 크기 스케일 비율 */
+  const scaleX = imgSize.w / Math.max(1, refPixels.w)
+  const scaleY = imgSize.h / Math.max(1, refPixels.h)
 
   return (
     <div className="mt-4 bg-gray-900 rounded-xl border border-gray-700 overflow-hidden">
@@ -208,23 +238,131 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
       ) : (
         <div className="flex flex-col lg:flex-row gap-0">
 
-          {/* 좌측: 이미지 + SVG 오버레이 */}
-          <div className="relative flex-1 bg-gray-950 min-h-48">
-            {imageSrc && !imgLoadError ? (
-              /* 실제 캡처 이미지 — /captures → Vite 프록시 → Pi :8000 */
-              <img
-                ref={imgRef}
-                src={imageSrc}
-                alt="검사 캡처 이미지"
-                className="w-full h-auto"
-                onLoad={() => {
-                  if (imgRef.current) {
-                    setImgSize({ w: imgRef.current.clientWidth, h: imgRef.current.clientHeight })
-                  }
-                }}
-                onError={() => setImgLoadError(true)}
-              />
-            ) : imageSrc && imgLoadError ? (
+          {/* 좌: 보정 전 / 우: 보정 후(+오버레이) — 또는 단일 이미지 */}
+          <div
+            className={
+              showSideBySide
+                ? 'flex flex-col sm:flex-row flex-1 min-w-0 border-b lg:border-b-0 lg:border-r border-gray-800'
+                : 'relative flex-1 bg-gray-950 min-h-48 border-b lg:border-b-0 lg:border-r border-gray-800'
+            }
+          >
+            {showSideBySide ? (
+              <>
+                <div className="relative flex-1 min-w-0 bg-gray-950 border-b sm:border-b-0 sm:border-r border-gray-800/90">
+                  <PanelBadge>보정 전</PanelBadge>
+                  {rawSrc && !rawLoadError ? (
+                    <img
+                      src={rawSrc}
+                      alt="촬영 원본"
+                      className="w-full h-auto block"
+                      onError={() => setRawLoadError(true)}
+                    />
+                  ) : (
+                    <div className="w-full min-h-32 flex flex-col items-center justify-center gap-2 px-4 py-8 bg-gray-900/50">
+                      <ImageOff size={28} className="text-gray-600" />
+                      <p className="text-xs text-gray-500">원본 이미지를 불러오지 못했습니다.</p>
+                    </div>
+                  )}
+                </div>
+                <div className="relative flex-1 min-w-0 bg-gray-950">
+                  <PanelBadge>보정 후 · 피듀셜/결함</PanelBadge>
+                  {deskewSrc && !deskewLoadError ? (
+                    <>
+                      <img
+                        ref={imgRef}
+                        src={deskewSrc}
+                        alt="기울기 보정 후"
+                        className="w-full h-auto block"
+                        onLoad={(e) => {
+                          const el = e.currentTarget
+                          setRefPixels({
+                            w: el.naturalWidth || DEFAULT_REF_WIDTH,
+                            h: el.naturalHeight || DEFAULT_REF_HEIGHT,
+                          })
+                          setImgSize({ w: el.clientWidth, h: el.clientHeight })
+                        }}
+                        onError={() => setDeskewLoadError(true)}
+                      />
+                      <svg
+                        className="absolute inset-0 w-full h-full pointer-events-none"
+                        viewBox={`0 0 ${imgSize.w} ${imgSize.h}`}
+                      >
+                        {log.fiducial1X != null && log.fiducial1Y != null && (
+                          <FiducialMarker
+                            x={log.fiducial1X}
+                            y={log.fiducial1Y}
+                            label="F1"
+                            scaleX={scaleX}
+                            scaleY={scaleY}
+                          />
+                        )}
+                        {log.fiducial2X != null && log.fiducial2Y != null && (
+                          <FiducialMarker
+                            x={log.fiducial2X}
+                            y={log.fiducial2Y}
+                            label="F2"
+                            scaleX={scaleX}
+                            scaleY={scaleY}
+                          />
+                        )}
+                        {log.defects.map((d, i) => (
+                          <BboxOverlay key={i} defect={d} scaleX={scaleX} scaleY={scaleY} />
+                        ))}
+                      </svg>
+                    </>
+                  ) : (
+                    <div className="w-full aspect-video bg-gray-800/60 flex flex-col items-center justify-center gap-2 px-4 text-center">
+                      <ImageOff size={32} className="text-gray-600" />
+                      <p className="text-xs text-gray-400">보정 이미지를 불러오지 못했습니다.</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : deskewSrc && !deskewLoadError ? (
+              <div className="relative w-full">
+                <img
+                  ref={imgRef}
+                  src={deskewSrc}
+                  alt="검사 캡처 이미지"
+                  className="w-full h-auto"
+                  onLoad={(e) => {
+                    const el = e.currentTarget
+                    setRefPixels({
+                      w: el.naturalWidth || DEFAULT_REF_WIDTH,
+                      h: el.naturalHeight || DEFAULT_REF_HEIGHT,
+                    })
+                    setImgSize({ w: el.clientWidth, h: el.clientHeight })
+                  }}
+                  onError={() => setDeskewLoadError(true)}
+                />
+                <svg
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  viewBox={`0 0 ${imgSize.w} ${imgSize.h}`}
+                >
+                  {log.fiducial1X != null && log.fiducial1Y != null && (
+                    <FiducialMarker
+                      x={log.fiducial1X}
+                      y={log.fiducial1Y}
+                      label="F1"
+                      scaleX={scaleX}
+                      scaleY={scaleY}
+                    />
+                  )}
+                  {log.fiducial2X != null && log.fiducial2Y != null && (
+                    <FiducialMarker
+                      x={log.fiducial2X}
+                      y={log.fiducial2Y}
+                      label="F2"
+                      scaleX={scaleX}
+                      scaleY={scaleY}
+                    />
+                  )}
+                  {log.defects.map((d, i) => (
+                    <BboxOverlay key={i} defect={d} scaleX={scaleX} scaleY={scaleY} />
+                  ))}
+                </svg>
+              </div>
+            ) : deskewSrc && deskewLoadError ? (
               <div className="w-full aspect-video bg-gray-800/60 flex flex-col items-center justify-center gap-2 px-4 text-center">
                 <ImageOff size={32} className="text-gray-600" />
                 <p className="text-xs text-gray-400">캡처 이미지를 불러오지 못했습니다.</p>
@@ -235,7 +373,6 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                 </p>
               </div>
             ) : (
-              /* 이미지 없음 플레이스홀더 */
               <div
                 ref={imgRef as React.RefObject<HTMLDivElement> as React.RefObject<any>}
                 className="w-full aspect-video bg-gray-800/60 flex flex-col items-center justify-center gap-2"
@@ -245,33 +382,6 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                 <p className="text-xs text-gray-600">(더미 모드에서는 이미지가 저장되지 않습니다)</p>
               </div>
             )}
-
-            {/* SVG 오버레이: 이미지 위에 정확히 겹침 */}
-            <svg
-              className="absolute inset-0 w-full h-full pointer-events-none"
-              viewBox={`0 0 ${imgSize.w} ${imgSize.h}`}
-            >
-              {/* 피듀셜 마크 1 */}
-              {log.fiducial1X != null && log.fiducial1Y != null && (
-                <FiducialMarker
-                  x={log.fiducial1X} y={log.fiducial1Y}
-                  label="F1" scaleX={scaleX} scaleY={scaleY}
-                />
-              )}
-
-              {/* 피듀셜 마크 2 */}
-              {log.fiducial2X != null && log.fiducial2Y != null && (
-                <FiducialMarker
-                  x={log.fiducial2X} y={log.fiducial2Y}
-                  label="F2" scaleX={scaleX} scaleY={scaleY}
-                />
-              )}
-
-              {/* 결함 바운딩박스 */}
-              {log.defects.map((d, i) => (
-                <BboxOverlay key={i} defect={d} scaleX={scaleX} scaleY={scaleY} />
-              ))}
-            </svg>
           </div>
 
           {/* 우측: 검사 메타데이터 패널 */}
@@ -284,7 +394,10 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
               <MetaRow label="검사 ID"     value={`#${log.id}`}              />
               <MetaRow label="디바이스"    value={log.deviceId}              />
               <MetaRow label="검사 시각"   value={new Date(log.inspectedAt).toLocaleString('ko-KR')} />
-              <MetaRow label="오차 각도"   value={log.angleErrorDeg != null ? `${log.angleErrorDeg.toFixed(2)}°` : '—'} />
+              <MetaRow
+                label="촬영 시 기울기"
+                value={log.angleErrorDeg != null ? `${log.angleErrorDeg.toFixed(2)}° (보정 전)` : '—'}
+              />
               <MetaRow label="추론 시간"   value={log.inferenceTimeMs != null ? `${log.inferenceTimeMs}ms` : '—'} />
               <MetaRow label="총 처리"     value={log.totalTimeMs != null ? `${log.totalTimeMs}ms` : '—'} />
             </dl>

@@ -34,7 +34,7 @@ export interface InspectionLog {
   fiducial2X: number | null
   fiducial2Y: number | null
 
-  /** 정렬 오차 각도 (°) */
+  /** 촬영 시 기울기 (°), 보정 적용 전 측정값 */
   angleErrorDeg: number | null
 
   /** 추론 소요 시간 (ms) */

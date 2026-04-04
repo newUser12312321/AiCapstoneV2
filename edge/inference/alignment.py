@@ -179,6 +179,43 @@ def deskew_image_by_fiducial_angle(
     )
 
 
+def crop_inspection_roi_with_offset(
+    image: np.ndarray,
+    alignment: AlignmentResult,
+    padding_ratio: float = 0.05,
+) -> tuple[np.ndarray, int, int]:
+    """
+    ROI 크롭과 함께, 원본(또는 deskew 후) 이미지 좌표계에서의 ROI 좌상단 오프셋 (x_min, y_min) 반환.
+    결함 박스가 ROI 기준이면 이 오프셋을 더해 전체 프레임 좌표로 변환할 때 사용한다.
+    """
+    if alignment.fiducial1 is None or alignment.fiducial2 is None:
+        logger.warning("[ROI] 마크 정보 없음 → 이미지 전체를 ROI로 사용")
+        return image, 0, 0
+
+    h, w = image.shape[:2]
+    b1 = alignment.fiducial1.bbox
+    b2 = alignment.fiducial2.bbox
+
+    x_min = min(b1.x, b2.x)
+    y_min = min(b1.y, b2.y)
+    x_max = max(b1.x + b1.width, b2.x + b2.width)
+    y_max = max(b1.y + b1.height, b2.y + b2.height)
+
+    pad_x = int((x_max - x_min) * padding_ratio)
+    pad_y = int((y_max - y_min) * padding_ratio)
+
+    x_min = max(0, x_min - pad_x)
+    y_min = max(0, y_min - pad_y)
+    x_max = min(w, x_max + pad_x)
+    y_max = min(h, y_max + pad_y)
+
+    roi = image[y_min:y_max, x_min:x_max]
+    logger.debug("[ROI] 크롭 영역: (%d,%d) ~ (%d,%d), 크기=%dx%d",
+                 x_min, y_min, x_max, y_max, roi.shape[1], roi.shape[0])
+
+    return roi, x_min, y_min
+
+
 def crop_inspection_roi(
     image: np.ndarray,
     alignment: AlignmentResult,
@@ -201,32 +238,5 @@ def crop_inspection_roi(
         크롭된 ROI numpy 배열.
         마크 정보가 없으면 원본 이미지 전체를 반환한다.
     """
-    if alignment.fiducial1 is None or alignment.fiducial2 is None:
-        logger.warning("[ROI] 마크 정보 없음 → 이미지 전체를 ROI로 사용")
-        return image
-
-    h, w = image.shape[:2]
-    b1 = alignment.fiducial1.bbox
-    b2 = alignment.fiducial2.bbox
-
-    # 두 바운딩 박스를 포함하는 최소 사각형 좌표 계산
-    x_min = min(b1.x, b2.x)
-    y_min = min(b1.y, b2.y)
-    x_max = max(b1.x + b1.width, b2.x + b2.width)
-    y_max = max(b1.y + b1.height, b2.y + b2.height)
-
-    # 여백 추가
-    pad_x = int((x_max - x_min) * padding_ratio)
-    pad_y = int((y_max - y_min) * padding_ratio)
-
-    # 이미지 경계 클리핑 (음수/초과 방지)
-    x_min = max(0, x_min - pad_x)
-    y_min = max(0, y_min - pad_y)
-    x_max = min(w, x_max + pad_x)
-    y_max = min(h, y_max + pad_y)
-
-    roi = image[y_min:y_max, x_min:x_max]
-    logger.debug("[ROI] 크롭 영역: (%d,%d) ~ (%d,%d), 크기=%dx%d",
-                 x_min, y_min, x_max, y_max, roi.shape[1], roi.shape[0])
-
+    roi, _, _ = crop_inspection_roi_with_offset(image, alignment, padding_ratio)
     return roi
