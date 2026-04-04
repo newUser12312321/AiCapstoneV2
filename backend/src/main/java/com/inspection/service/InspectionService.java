@@ -4,11 +4,13 @@ import com.inspection.domain.entity.DefectDetail;
 import com.inspection.domain.entity.InspectionLog;
 import com.inspection.domain.enums.InspectionResult;
 import com.inspection.dto.DefectDetailDto;
+import com.inspection.dto.FiducialOperationalStatsDto;
 import com.inspection.dto.InspectionRequestDto;
 import com.inspection.dto.InspectionResponseDto;
 import com.inspection.repository.InspectionLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +35,9 @@ import java.util.stream.Collectors;
 public class InspectionService {
 
     private final InspectionLogRepository inspectionLogRepository;
+
+    @Value("${inspection.fiducial.max-angle-error-deg:3.0}")
+    private float maxAngleErrorDeg;
 
     // ── 검사 결과 저장 ────────────────────────────────────────────────────────
 
@@ -163,6 +168,26 @@ public class InspectionService {
                 "failCount",  fail,
                 "failRate",   Math.round(failRate * 10000.0) / 100.0  // 소수점 2자리 %
         );
+    }
+
+    /**
+     * 피듀셜 관련 운영 지표 (DB에 저장된 좌표·각도 기준, 정답 라벨 없음).
+     *
+     * @param from inclusive, to inclusive (같은 시각 포함 구간)
+     */
+    @Transactional(readOnly = true)
+    public FiducialOperationalStatsDto getFiducialOperationalStats(
+            LocalDateTime from, LocalDateTime to) {
+        long total = inspectionLogRepository.countByInspectedAtBetween(from, to);
+        long pairOk = inspectionLogRepository.countFiducialPairDetectedBetween(from, to);
+        long alignOk = inspectionLogRepository.countAlignmentWithinThresholdBetween(
+                from, to, maxAngleErrorDeg);
+
+        double pairPct = total > 0 ? Math.round(10000.0 * pairOk / total) / 100.0 : 0.0;
+        double alignPct = total > 0 ? Math.round(10000.0 * alignOk / total) / 100.0 : 0.0;
+
+        return new FiducialOperationalStatsDto(
+                from, to, total, pairPct, alignPct, maxAngleErrorDeg);
     }
 
     /**

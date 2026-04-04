@@ -116,15 +116,28 @@ interface DefectViewerProps {
   onClose:      () => void
 }
 
+/**
+ * 캡처 이미지 URL — 항상 `/captures/...` 상대 경로만 사용한다.
+ * `npm run dev` 시 Vite가 `vite.config.ts`의 프록시로 라즈베리파이 :8000에 넘긴다.
+ * (브라우저가 Pi에 직접 접속하면 PC 방화벽/망 설정에 따라 실패하기 쉬움)
+ */
 function resolveImageSrc(imagePath: string | null): string | null {
   if (!imagePath) return null
-  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) return imagePath
-  if (imagePath.startsWith('/captures/')) return imagePath
-  if (imagePath.startsWith('captures/')) return `/${imagePath}`
+  const p = imagePath.replace(/\\/g, '/')
+  if (p.startsWith('http://') || p.startsWith('https://')) return p
 
-  const capturesIndex = imagePath.indexOf('/captures/')
-  if (capturesIndex >= 0) return imagePath.slice(capturesIndex)
-  return imagePath
+  let relative: string
+  if (p.startsWith('/captures/')) {
+    relative = p
+  } else if (p.startsWith('captures/')) {
+    relative = `/${p}`
+  } else {
+    const capturesIndex = p.indexOf('/captures/')
+    relative = capturesIndex >= 0 ? p.slice(capturesIndex) : p
+  }
+
+  if (relative.startsWith('/')) return relative
+  return relative.startsWith('captures/') ? `/${relative}` : relative
 }
 
 export default function DefectViewer({ inspectionId, onClose }: DefectViewerProps) {
@@ -134,6 +147,11 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
   /* 표시 중인 이미지 엘리먼트의 실제 렌더링 크기를 추적 */
   const imgRef = useRef<HTMLImageElement>(null)
   const [imgSize, setImgSize] = useState({ w: ORIGINAL_WIDTH, h: ORIGINAL_HEIGHT })
+  const [imgLoadError, setImgLoadError] = useState(false)
+
+  useEffect(() => {
+    setImgLoadError(false)
+  }, [inspectionId, imageSrc])
 
   /* 이미지가 로드되거나 창 크기가 변경되면 실제 크기 재측정 */
   useEffect(() => {
@@ -192,8 +210,8 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
 
           {/* 좌측: 이미지 + SVG 오버레이 */}
           <div className="relative flex-1 bg-gray-950 min-h-48">
-            {imageSrc ? (
-              /* 실제 캡처 이미지 */
+            {imageSrc && !imgLoadError ? (
+              /* 실제 캡처 이미지 — /captures → Vite 프록시 → Pi :8000 */
               <img
                 ref={imgRef}
                 src={imageSrc}
@@ -204,7 +222,18 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                     setImgSize({ w: imgRef.current.clientWidth, h: imgRef.current.clientHeight })
                   }
                 }}
+                onError={() => setImgLoadError(true)}
               />
+            ) : imageSrc && imgLoadError ? (
+              <div className="w-full aspect-video bg-gray-800/60 flex flex-col items-center justify-center gap-2 px-4 text-center">
+                <ImageOff size={32} className="text-gray-600" />
+                <p className="text-xs text-gray-400">캡처 이미지를 불러오지 못했습니다.</p>
+                <p className="text-xs text-gray-500">
+                  <code className="text-indigo-300">frontend/vite.config.ts</code>의{' '}
+                  <code className="text-indigo-300">/captures</code> 프록시가 Pi IP와 맞는지,
+                  Pi에서 <code className="text-indigo-300">uvicorn</code>이 떠 있는지 확인하세요.
+                </p>
+              </div>
             ) : (
               /* 이미지 없음 플레이스홀더 */
               <div

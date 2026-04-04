@@ -25,6 +25,11 @@ spring:
 server:
   port: 8080
 
+# 엣지 .env 의 MAX_ANGLE_ERROR_DEG 와 맞추면 "정렬 통과율"이 파이프라인과 일치한다.
+inspection:
+  fiducial:
+    max-angle-error-deg: 3.0
+
 logging:
   level:
     com.inspection: DEBUG

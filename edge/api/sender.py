@@ -194,7 +194,8 @@ def create_dummy_packet(
         angle_error_deg=round(random.uniform(0.1, 1.5), 2),
         inference_time_ms=random.randint(80, 200),
         total_time_ms=random.randint(200, 500),
-        image_path=f"/captures/dummy_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg",
+        # 더미는 실제 파일이 없으므로 경로를 넣지 않음 (대시보드 깨진 이미지 방지)
+        image_path=None,
         inspected_at=datetime.now(),
         defects=defects,
     )

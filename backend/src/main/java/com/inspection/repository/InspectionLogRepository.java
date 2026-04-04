@@ -62,4 +62,36 @@ public interface InspectionLogRepository extends JpaRepository<InspectionLog, Lo
      * @param deviceId 디바이스 식별자
      */
     List<InspectionLog> findByDeviceIdOrderByInspectedAtDesc(String deviceId);
+
+    /**
+     * 기간 내 검사 건수 (운영 지표 분모)
+     */
+    long countByInspectedAtBetween(LocalDateTime from, LocalDateTime to);
+
+    /**
+     * 기간 내 피듀셜 1·2번 X좌표가 모두 있는 건수 (쌍 검출로 간주)
+     */
+    @Query("""
+            SELECT COUNT(l) FROM InspectionLog l
+            WHERE l.inspectedAt BETWEEN :from AND :to
+              AND l.fiducial1X IS NOT NULL
+              AND l.fiducial2X IS NOT NULL
+            """)
+    long countFiducialPairDetectedBetween(
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
+
+    /**
+     * 기간 내 정렬 각도가 임계값 이하인 건수 (엣지 정렬 통과와 동일 조건으로 보려면 maxAngle을 동일하게 유지)
+     */
+    @Query("""
+            SELECT COUNT(l) FROM InspectionLog l
+            WHERE l.inspectedAt BETWEEN :from AND :to
+              AND l.angleErrorDeg IS NOT NULL
+              AND l.angleErrorDeg <= :maxAngle
+            """)
+    long countAlignmentWithinThresholdBetween(
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to,
+            @Param("maxAngle") float maxAngle);
 }

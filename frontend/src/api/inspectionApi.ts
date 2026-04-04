@@ -7,7 +7,7 @@
  */
 
 import axios from 'axios'
-import type { InspectionLog, InspectionStats } from '@/types/inspection'
+import type { FiducialOperationalStats, InspectionLog, InspectionStats } from '@/types/inspection'
 
 // ── Axios 인스턴스 생성 ───────────────────────────────────────────────────────
 
@@ -84,6 +84,19 @@ export const fetchRecentInspections = async (limit = 10): Promise<InspectionLog[
  */
 export const fetchStats = async (): Promise<InspectionStats> => {
   const { data } = await apiClient.get<InspectionStats>('/inspections/stats')
+  return data
+}
+
+/**
+ * 피듀셜 운영 지표 (기간 생략 시 오늘 0시~현재, Asia/Seoul).
+ */
+export const fetchFiducialOperationalStats = async (
+  from?: string,
+  to?: string
+): Promise<FiducialOperationalStats> => {
+  const { data } = await apiClient.get<FiducialOperationalStats>('/inspections/stats/fiducial', {
+    params: from && to ? { from, to } : {},
+  })
   return data
 }
 

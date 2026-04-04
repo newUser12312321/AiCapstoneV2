@@ -11,9 +11,10 @@ Base URL: http://<라즈베리파이_IP>:8000
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from pydantic import BaseModel, Field
 
 from api.sender import create_dummy_packet, ServerSender
 from config.settings import settings
@@ -49,6 +50,56 @@ async def health_check() -> dict[str, Any]:
         "device_id": "RPI5-LINE-A",
         "environment": settings.ENVIRONMENT,
         "server_url": settings.SERVER_BASE_URL,
+    }
+
+
+class CompareModelsBody(BaseModel):
+    """대시보드에서 여러 .pt를 같은 촬영으로 비교할 때 사용."""
+
+    weights: list[str] = Field(..., min_length=1, description="edge/weights 기준 상대 경로 (예: alice.pt, team/best.pt)")
+    defect_weights: Optional[list[str]] = Field(
+        default=None,
+        description="분리 학습 시 결함 가중치 (weights 와 동일 개수)",
+    )
+    image: Optional[str] = Field(
+        default=None,
+        description="캡처 대신 사용할 이미지 (edge/captures 기준, 예: snap.jpg)",
+    )
+    conf: Optional[float] = Field(default=None, description="신뢰도 임계값 (기본: settings)")
+    camera_index: Optional[int] = Field(default=None, description="비디오 장치 인덱스")
+
+
+@router.post("/compare-models", summary="동일 촬영으로 여러 가중치 비교")
+async def compare_models_endpoint(body: CompareModelsBody) -> dict[str, Any]:
+    """
+    라즈베리파이에서 한 번 캡처한 프레임(또는 captures 이미지)으로
+    weights 목록에 대해 순차 추론하여 표 형태 비교 결과를 반환한다.
+    """
+    from inference.model_compare import compare_models as run_compare
+
+    loop = asyncio.get_running_loop()
+    try:
+        rows, src = await loop.run_in_executor(
+            None,
+            lambda: run_compare(
+                body.weights,
+                body.defect_weights,
+                body.image,
+                body.camera_index,
+                body.conf,
+            ),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    return {
+        "input_source": src if src else "camera",
+        "max_angle_error_deg": settings.MAX_ANGLE_ERROR_DEG,
+        "conf": body.conf if body.conf is not None else settings.YOLO_CONFIDENCE_THRESHOLD,
+        "rows": rows,
+        "note": "동일 장면에서의 상대 비교이며, mAP 등 검증 정확도는 아님. 라벨 세트는 yolo val 권장.",
     }
 
 

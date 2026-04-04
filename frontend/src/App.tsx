@@ -17,6 +17,7 @@ import Header from '@/components/common/Header'
 import Sidebar from '@/components/common/Sidebar'
 import DashboardPage from '@/pages/DashboardPage'
 import HistoryPage from '@/pages/HistoryPage'
+import ModelComparePage from '@/pages/ModelComparePage'
 
 /** 아직 구현되지 않은 경로를 위한 플레이스홀더 페이지 */
 function PlaceholderPage({ title }: { title: string }) {
@@ -49,6 +50,9 @@ export default function App() {
 
             {/* 검사 이력 */}
             <Route path="/history"  element={<HistoryPage />} />
+
+            {/* 모델 비교 (엣지 동일 촬영) */}
+            <Route path="/compare" element={<ModelComparePage />} />
 
             {/* 설정 (플레이스홀더) */}
             <Route path="/settings" element={<PlaceholderPage title="설정" />} />

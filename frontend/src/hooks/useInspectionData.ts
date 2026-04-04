@@ -12,6 +12,7 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   fetchAllInspections,
+  fetchFiducialOperationalStats,
   fetchInspectionById,
   fetchInspectionsByPeriod,
   fetchRecentInspections,
@@ -22,6 +23,7 @@ import type { TrendDataPoint } from '@/types/inspection'
 /** React Query 캐시 키 상수 — 오타 방지를 위해 중앙 관리 */
 export const QUERY_KEYS = {
   stats:        ['inspections', 'stats']         as const,
+  fiducialStats: ['inspections', 'stats', 'fiducial'] as const,
   all:          ['inspections', 'all']           as const,
   recent:       (limit: number) => ['inspections', 'recent', limit] as const,
   byId:         (id: number)    => ['inspections', id]              as const,
@@ -41,6 +43,18 @@ export function useStats() {
     queryFn:         fetchStats,
     refetchInterval: 5_000,   // 5초마다 자동 갱신
     staleTime:       3_000,   // 3초 이내 데이터는 fresh로 간주 (불필요한 재요청 방지)
+  })
+}
+
+/**
+ * 피듀셜 운영 지표 (오늘 기준, 서버가 기간을 결정). 기간 커스텀은 필요 시 fetch에 인자 추가.
+ */
+export function useFiducialOperationalStats() {
+  return useQuery({
+    queryKey:        QUERY_KEYS.fiducialStats,
+    queryFn:         () => fetchFiducialOperationalStats(),
+    refetchInterval: 5_000,
+    staleTime:       3_000,
   })
 }
 

@@ -66,6 +66,18 @@ export interface InspectionStats {
   failRate:   number   // 불량률 (0.0 ~ 100.0, %)
 }
 
+/** GET /api/inspections/stats/fiducial — 피듀셜 운영 지표 (정답 라벨 없음) */
+export interface FiducialOperationalStats {
+  periodFrom: string
+  periodTo: string
+  totalInspections: number
+  /** fiducial1·2 좌표가 모두 있는 검사 비율 (%) */
+  fiducialPairRatePct: number
+  /** angleErrorDeg ≤ maxAngleErrorDeg 인 검사 비율 (%) */
+  alignmentPassRatePct: number
+  maxAngleErrorDeg: number
+}
+
 // ── 차트용 파생 타입 ──────────────────────────────────────────────────────────
 
 /** TrendChart에서 사용하는 시간대별 집계 데이터 포인트 */
