@@ -101,6 +101,10 @@ class InspectionPacket(BaseModel):
     fiducial2_x: Optional[int] = Field(default=None, serialization_alias="fiducial2X")
     fiducial2_y: Optional[int] = Field(default=None, serialization_alias="fiducial2Y")
 
+    # Stage1 YOLO 탐지 신뢰도 (0~1, 없으면 None)
+    fiducial1_confidence: Optional[float] = Field(default=None, serialization_alias="fiducial1Confidence")
+    fiducial2_confidence: Optional[float] = Field(default=None, serialization_alias="fiducial2Confidence")
+
     # 정렬 오차 각도
     angle_error_deg: Optional[float] = Field(default=None, serialization_alias="angleErrorDeg")
 

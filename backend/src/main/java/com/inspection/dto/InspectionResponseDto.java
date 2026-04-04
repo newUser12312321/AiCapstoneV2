@@ -37,6 +37,9 @@ public class InspectionResponseDto {
     private Integer fiducial2X;
     private Integer fiducial2Y;
 
+    private Float fiducial1Confidence;
+    private Float fiducial2Confidence;
+
     /** 정렬 오차 각도 (°) */
     private Float angleErrorDeg;
 
@@ -83,6 +86,8 @@ public class InspectionResponseDto {
                 .fiducial1Y(log.getFiducial1Y())
                 .fiducial2X(log.getFiducial2X())
                 .fiducial2Y(log.getFiducial2Y())
+                .fiducial1Confidence(log.getFiducial1Confidence())
+                .fiducial2Confidence(log.getFiducial2Confidence())
                 .angleErrorDeg(log.getAngleErrorDeg())
                 .inferenceTimeMs(log.getInferenceTimeMs())
                 .totalTimeMs(log.getTotalTimeMs())

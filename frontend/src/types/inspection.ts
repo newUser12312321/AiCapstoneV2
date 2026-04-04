@@ -34,6 +34,10 @@ export interface InspectionLog {
   fiducial2X: number | null
   fiducial2Y: number | null
 
+  /** Stage1 YOLO 탐지 신뢰도 (0~1, 미전송·구 이력은 null/undefined) */
+  fiducial1Confidence?: number | null
+  fiducial2Confidence?: number | null
+
   /** 촬영 시 기울기 (°), 보정 적용 전 측정값 */
   angleErrorDeg: number | null
 

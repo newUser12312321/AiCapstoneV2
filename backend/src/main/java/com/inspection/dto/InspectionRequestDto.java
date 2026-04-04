@@ -51,6 +51,10 @@ public class InspectionRequestDto {
     private Integer fiducial2X;
     private Integer fiducial2Y;
 
+    /** 피듀셜 YOLO 탐지 신뢰도 (0~1, 선택) */
+    private Float fiducial1Confidence;
+    private Float fiducial2Confidence;
+
     /** 정렬 오차 각도 (°) */
     private Float angleErrorDeg;
 

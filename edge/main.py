@@ -53,6 +53,7 @@ from inference.alignment import (
 )
 from inference.yolo_detector import YoloDetector
 from models.schemas import (
+    AlignmentResult,
     DefectPayload,
     InspectionPacket,
     InspectionResult,
@@ -68,6 +69,13 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("main")
+
+
+def _fiducial_confidences(alignment: AlignmentResult) -> tuple[Optional[float], Optional[float]]:
+    """피듀셜 DetectionItem.confidence → 서버 전송용 (없으면 None)."""
+    f1 = float(alignment.fiducial1.confidence) if alignment.fiducial1 else None
+    f2 = float(alignment.fiducial2.confidence) if alignment.fiducial2 else None
+    return f1, f2
 
 
 # ── 전역 싱글턴 객체 (앱 수명 주기 동안 유지) ─────────────────────────────────
@@ -274,9 +282,11 @@ def _run_production_vision_pipeline(
 
         if not alignment.is_aligned:
             logger.warning("[파이프라인] 피듀셜/기울기 조건 불충족 → FAIL, Stage 2 건너뜀")
+            f1c, f2c = _fiducial_confidences(alignment)
             packet = _build_packet(
                 result=InspectionResult.FAIL,
                 f1x=f1x, f1y=f1y, f2x=f2x, f2y=f2y,
+                f1_conf=f1c, f2_conf=f2c,
                 angle_error=measured_skew_deg,
                 inference_ms=fiducial_ms,
                 defects=[],
@@ -329,9 +339,11 @@ def _run_production_vision_pipeline(
             for d in defect_items
         ]
 
+        f1c, f2c = _fiducial_confidences(alignment)
         packet = _build_packet(
             result=final_result,
             f1x=f1x, f1y=f1y, f2x=f2x, f2y=f2y,
+            f1_conf=f1c, f2_conf=f2c,
             angle_error=measured_skew_deg,
             inference_ms=fiducial_ms + defect_ms,
             defects=defect_payloads,
@@ -394,6 +406,8 @@ def _build_packet(
     defects: list[DefectPayload],
     image_path: str,
     pipeline_start: float,
+    f1_conf: Optional[float] = None,
+    f2_conf: Optional[float] = None,
 ) -> InspectionPacket:
     """InspectionPacket 조립 헬퍼."""
     total_ms = int((time.perf_counter() - pipeline_start) * 1000)
@@ -402,6 +416,8 @@ def _build_packet(
         result=result,
         fiducial1_x=f1x, fiducial1_y=f1y,
         fiducial2_x=f2x, fiducial2_y=f2y,
+        fiducial1_confidence=f1_conf,
+        fiducial2_confidence=f2_conf,
         angle_error_deg=angle_error,
         inference_time_ms=inference_ms,
         total_time_ms=total_ms,

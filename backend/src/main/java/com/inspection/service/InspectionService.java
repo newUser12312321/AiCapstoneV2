@@ -68,6 +68,8 @@ public class InspectionService {
                 .fiducial1Y(dto.getFiducial1Y())
                 .fiducial2X(dto.getFiducial2X())
                 .fiducial2Y(dto.getFiducial2Y())
+                .fiducial1Confidence(dto.getFiducial1Confidence())
+                .fiducial2Confidence(dto.getFiducial2Confidence())
                 .angleErrorDeg(dto.getAngleErrorDeg())
                 .inferenceTimeMs(dto.getInferenceTimeMs())
                 .totalTimeMs(dto.getTotalTimeMs())

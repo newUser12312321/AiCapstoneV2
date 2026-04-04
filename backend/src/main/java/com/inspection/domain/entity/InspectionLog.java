@@ -76,6 +76,14 @@ public class InspectionLog {
     @Column(name = "fiducial2_y")
     private Integer fiducial2Y;
 
+    /** 피듀셜 1번 YOLO 탐지 신뢰도 (0~1) */
+    @Column(name = "fiducial1_confidence")
+    private Float fiducial1Confidence;
+
+    /** 피듀셜 2번 YOLO 탐지 신뢰도 (0~1) */
+    @Column(name = "fiducial2_confidence")
+    private Float fiducial2Confidence;
+
     /**
      * 기판 정렬 오차 각도 (도 단위, °)
      * 두 피듀셜 마크를 연결한 선의 수평 기준 편차

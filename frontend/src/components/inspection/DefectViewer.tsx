@@ -86,25 +86,94 @@ function BboxOverlay({ defect, scaleX, scaleY }: BboxOverlayProps) {
 // ── 피듀셜 마크 오버레이 ──────────────────────────────────────────────────────
 
 function FiducialMarker({
-  x, y, label, scaleX, scaleY,
+  x,
+  y,
+  label,
+  confidence,
+  scaleX,
+  scaleY,
 }: {
-  x: number; y: number; label: string; scaleX: number; scaleY: number
+  x: number
+  y: number
+  label: string
+  confidence: number | null | undefined
+  scaleX: number
+  scaleY: number
 }) {
   const sx = x * scaleX
   const sy = y * scaleY
-  const color = "#00e5ff"
+  const color = '#38bdf8'
+  const gap = 5
+  const arm = 16
+  const cap =
+    confidence != null && !Number.isNaN(confidence)
+      ? `${label} ${(confidence * 100).toFixed(0)}%`
+      : label
+  const tw = Math.min(160, Math.max(44, cap.length * 6.2))
+  const labelY = sy - 14
+
   return (
     <g>
-      {/* 십자선 */}
-      <line x1={sx - 20} y1={sy} x2={sx + 20} y2={sy} stroke={color} strokeWidth={3} />
-      <line x1={sx} y1={sy - 20} x2={sx} y2={sy + 20} stroke={color} strokeWidth={3} />
-      {/* 바깥 원 + 중심점 */}
-      <circle cx={sx} cy={sy} r={14} fill="transparent" stroke={color} strokeWidth={3} />
-      <circle cx={sx} cy={sy} r={4} fill={color} />
-      {/* 레이블 배경 */}
-      <rect x={sx + 14} y={sy - 26} width={28} height={18} rx={4} fill={color} />
-      {/* 레이블 */}
-      <text x={sx + 28} y={sy - 13} fill="#001018" fontSize={11} fontWeight="700" textAnchor="middle">{label}</text>
+      {/* 십자선 — 중앙은 비움 (실제 마크가 보이도록) */}
+      <line
+        x1={sx - arm}
+        y1={sy}
+        x2={sx - gap}
+        y2={sy}
+        stroke={color}
+        strokeWidth={1.75}
+        strokeLinecap="round"
+      />
+      <line
+        x1={sx + gap}
+        y1={sy}
+        x2={sx + arm}
+        y2={sy}
+        stroke={color}
+        strokeWidth={1.75}
+        strokeLinecap="round"
+      />
+      <line
+        x1={sx}
+        y1={sy - arm}
+        x2={sx}
+        y2={sy - gap}
+        stroke={color}
+        strokeWidth={1.75}
+        strokeLinecap="round"
+      />
+      <line
+        x1={sx}
+        y1={sy + gap}
+        x2={sx}
+        y2={sy + arm}
+        stroke={color}
+        strokeWidth={1.75}
+        strokeLinecap="round"
+      />
+      <circle cx={sx} cy={sy} r={11} fill="none" stroke={color} strokeWidth={1.75} />
+      {/* 라벨·신뢰도 — 마크 위쪽으로만 배치 (마크 가리지 않음) */}
+      <rect
+        x={sx - tw / 2}
+        y={labelY - 12}
+        width={tw}
+        height={14}
+        rx={4}
+        fill="rgba(15,23,42,0.78)"
+        stroke="rgba(56,189,248,0.5)"
+        strokeWidth={1}
+      />
+      <text
+        x={sx}
+        y={labelY - 1}
+        fill="#e0f2fe"
+        fontSize={10}
+        fontWeight={600}
+        textAnchor="middle"
+        fontFamily="ui-monospace, monospace"
+      >
+        {cap}
+      </text>
     </g>
   )
 }
@@ -292,6 +361,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                             x={log.fiducial1X}
                             y={log.fiducial1Y}
                             label="F1"
+                            confidence={log.fiducial1Confidence ?? null}
                             scaleX={scaleX}
                             scaleY={scaleY}
                           />
@@ -301,6 +371,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                             x={log.fiducial2X}
                             y={log.fiducial2Y}
                             label="F2"
+                            confidence={log.fiducial2Confidence ?? null}
                             scaleX={scaleX}
                             scaleY={scaleY}
                           />
@@ -344,6 +415,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                       x={log.fiducial1X}
                       y={log.fiducial1Y}
                       label="F1"
+                      confidence={log.fiducial1Confidence ?? null}
                       scaleX={scaleX}
                       scaleY={scaleY}
                     />
@@ -353,6 +425,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                       x={log.fiducial2X}
                       y={log.fiducial2Y}
                       label="F2"
+                      confidence={log.fiducial2Confidence ?? null}
                       scaleX={scaleX}
                       scaleY={scaleY}
                     />
@@ -398,6 +471,21 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                 label="촬영 시 기울기"
                 value={log.angleErrorDeg != null ? `${log.angleErrorDeg.toFixed(2)}° (보정 전)` : '—'}
               />
+              {(log.fiducial1Confidence != null || log.fiducial2Confidence != null) && (
+                <MetaRow
+                  label="피듀셜 conf"
+                  value={[
+                    log.fiducial1Confidence != null
+                      ? `F1 ${(log.fiducial1Confidence * 100).toFixed(0)}%`
+                      : null,
+                    log.fiducial2Confidence != null
+                      ? `F2 ${(log.fiducial2Confidence * 100).toFixed(0)}%`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                />
+              )}
               <MetaRow label="추론 시간"   value={log.inferenceTimeMs != null ? `${log.inferenceTimeMs}ms` : '—'} />
               <MetaRow label="총 처리"     value={log.totalTimeMs != null ? `${log.totalTimeMs}ms` : '—'} />
             </dl>
