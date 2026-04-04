@@ -113,6 +113,35 @@ def resolve_safe_capture_path(user_path: str) -> Path:
     return candidate
 
 
+def resolve_safe_inspection_source_image(user_path: str) -> Path:
+    """
+    검사 파이프라인용 소스 이미지 — edge/captures 또는 edge/demo_samples 아래만 허용.
+    예: \"20260404_xxx.jpg\", \"demo_samples/synthetic/defect_001.jpg\"
+    """
+    raw = Path(user_path.strip())
+    if not str(raw) or raw.is_absolute() or ".." in raw.parts:
+        raise ValueError("허용되지 않는 이미지 경로입니다.")
+    parts = raw.parts
+    if parts and parts[0] == "demo_samples":
+        base = (_EDGE_ROOT / "demo_samples").resolve()
+        rel = Path(*parts[1:]) if len(parts) > 1 else Path()
+    else:
+        base = (_EDGE_ROOT / "captures").resolve()
+        rel = raw
+    candidate = (base / rel).resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError as e:
+        raise ValueError(
+            f"이미지는 edge/captures 또는 edge/demo_samples 아래만 허용됩니다: {user_path}"
+        ) from e
+    if not candidate.is_file():
+        raise FileNotFoundError(f"이미지 없음: {candidate}")
+    if candidate.suffix.lower() not in (".jpg", ".jpeg", ".png", ".bmp", ".webp"):
+        raise ValueError(f"지원하지 않는 이미지 형식입니다: {candidate.suffix}")
+    return candidate
+
+
 def _frame_from_running_edge_camera() -> Optional[Any]:
     """
     main.py lifespan 이 이미 연 전역 카메라가 있으면 1프레임만 읽는다.

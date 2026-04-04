@@ -35,6 +35,10 @@ export default defineConfig(({ mode }) => {
           target: edgeCaptureUrl,
           changeOrigin: true,
         },
+        '/demo_samples': {
+          target: edgeCaptureUrl,
+          changeOrigin: true,
+        },
       },
     },
   }

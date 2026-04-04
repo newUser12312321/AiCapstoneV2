@@ -31,9 +31,12 @@ from pathlib import Path
 from typing import Optional
 
 import cv2
+import numpy as np
 
 # 캡처 저장·정적 서빙 경로 (settings와 무관, 항상 main.py 기준 edge/captures)
-CAPTURES_DIR = Path(__file__).resolve().parent / "captures"
+_EDGE_DIR = Path(__file__).resolve().parent
+CAPTURES_DIR = _EDGE_DIR / "captures"
+DEMO_SAMPLES_DIR = _EDGE_DIR / "demo_samples"
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -166,7 +169,9 @@ app.include_router(edge_router)
 
 # 캡처 이미지 정적 서빙 — edge/captures 고정 (uvicorn 실행 위치와 무관). 라우터보다 뒤에 마운트.
 CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+DEMO_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/captures", StaticFiles(directory=str(CAPTURES_DIR)), name="captures")
+app.mount("/demo_samples", StaticFiles(directory=str(DEMO_SAMPLES_DIR)), name="demo_samples")
 
 
 # ── 2-Stage 비전 검사 파이프라인 ──────────────────────────────────────────────
@@ -216,14 +221,33 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
 
         frame, image_path = camera.capture_and_save()
 
-        # 디버그용: 캡처 이미지를 화면에 표시 (운영에서는 비활성화 가능)
-        if settings.ENVIRONMENT == "development":
+        debug_imshow = settings.ENVIRONMENT == "development"
+        return _run_production_vision_pipeline(
+            frame, image_path, pipeline_start, debug_imshow=debug_imshow
+        )
+
+    except Exception as e:
+        logger.error("[파이프라인] 예외 발생: %s", e, exc_info=True)
+        if gpio:
+            gpio.signal_error()
+        return None
+
+
+def _run_production_vision_pipeline(
+    frame: np.ndarray,
+    image_path: str,
+    pipeline_start: float,
+    *,
+    debug_imshow: bool = False,
+) -> Optional[InspectionPacket]:
+    """카메라/파일 공통 — Stage 1·2 및 전송."""
+    try:
+        if debug_imshow:
             cv2.imshow("Captured Frame", cv2.resize(frame, (640, 360)))
             cv2.waitKey(1)
 
         # STEP 2-A: Stage 1 — 피듀셜 마크 탐지 및 정렬 검사
         logger.info("[파이프라인] STEP 2-A — 피듀셜 마크 탐지")
-        # 분리 모델이면 fiducial_detector, 통합 모델이면 detector 사용
         stage1 = fiducial_detector if settings.USE_SEPARATE_MODELS else detector
         fiducials, fiducial_ms = stage1.detect_fiducials(frame)
         alignment = compute_alignment(fiducials)
@@ -236,14 +260,12 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
             measured_skew_deg,
         )
 
-        # 피듀셜 마크 좌표 추출 (원본 캡처 기준 — 서버·로그용)
         f1x = f1y = f2x = f2y = None
         if alignment.fiducial1:
             f1x, f1y = alignment.fiducial1.center_x, alignment.fiducial1.center_y
         if alignment.fiducial2:
             f2x, f2y = alignment.fiducial2.center_x, alignment.fiducial2.center_y
 
-        # 마크 부족 또는 기울기 한도 초과 시 FAIL (Stage 2 건너뜀)
         if not alignment.is_aligned:
             logger.warning("[파이프라인] 피듀셜/기울기 조건 불충족 → FAIL, Stage 2 건너뜀")
             packet = _build_packet(
@@ -258,11 +280,9 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
             _finalize(packet)
             return packet
 
-        # 피듀셜 기준 이미지 회전 보정 (미세 각도는 생략 가능)
         logger.info("[파이프라인] STEP 2-A′ — 기울기 보정 (deskew)")
         frame, alignment = deskew_image_by_fiducial_angle(frame, alignment)
 
-        # 보정 후 프레임을 저장 (뷰어·DB imagePath — 피듀셜/결함 오버레이와 좌표계 일치)
         orig_p = Path(image_path)
         deskew_path = str(orig_p.parent / f"{orig_p.stem}_deskew{orig_p.suffix}")
         cv2.imwrite(deskew_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -273,19 +293,15 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
         if alignment.fiducial2:
             f2x, f2y = alignment.fiducial2.center_x, alignment.fiducial2.center_y
 
-        # STEP 2-B: Stage 2 — ROI 크롭 후 결함 탐지
         logger.info("[파이프라인] STEP 2-B — 결함 탐지 (ROI)")
         roi, roi_x, roi_y = crop_inspection_roi_with_offset(frame, alignment)
-        # 분리 모델이면 defect_detector, 통합 모델이면 detector 사용
         stage2 = defect_detector if settings.USE_SEPARATE_MODELS else detector
         defect_items, defect_ms = stage2.detect_defects(roi)
 
         logger.info("[파이프라인] 결함 탐지: %d건", len(defect_items))
 
-        # 결함이 하나라도 있으면 FAIL
         final_result = InspectionResult.FAIL if defect_items else InspectionResult.PASS
 
-        # DefectItem → DefectPayload 변환
         defect_payloads = [
             DefectPayload(
                 defect_type=d.defect_type,
@@ -298,7 +314,6 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
             for d in defect_items
         ]
 
-        # 최종 패킷 구성 (imagePath = 보정 후 이미지)
         packet = _build_packet(
             result=final_result,
             f1x=f1x, f1y=f1y, f2x=f2x, f2y=f2y,
@@ -309,7 +324,6 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
             pipeline_start=pipeline_start,
         )
 
-        # STEP 3 & 4: GPIO 알람 + 서버 전송
         _finalize(packet)
         return packet
 
@@ -318,6 +332,43 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
         if gpio:
             gpio.signal_error()
         return None
+
+
+async def run_inspection_pipeline_from_source_file(relative_path: str) -> Optional[InspectionPacket]:
+    """
+    edge/captures 또는 edge/demo_samples 아래 저장된 이미지로 동일 파이프라인 실행.
+    카메라 없이 시연·합성 데이터 검증에 사용한다.
+    """
+    from inference.model_compare import resolve_safe_inspection_source_image
+
+    pipeline_start = time.perf_counter()
+    has_models = (
+        (fiducial_detector is not None and defect_detector is not None)
+        if settings.USE_SEPARATE_MODELS
+        else detector is not None
+    )
+    if not has_models:
+        logger.error("[파이프라인] YOLO 모델이 로드되지 않아 파일 검사를 건너뜁니다.")
+        return None
+
+    src = resolve_safe_inspection_source_image(relative_path)
+
+    frame = cv2.imread(str(src))
+    if frame is None:
+        raise RuntimeError(f"이미지 디코딩 실패: {src}")
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    dest = CAPTURES_DIR / f"{ts}_fromfile{src.suffix.lower() if src.suffix else '.jpg'}"
+    cv2.imwrite(str(dest), frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    image_path = str(dest.resolve())
+
+    logger.info("[파이프라인] STEP 1 — 파일 로드 검사: %s → %s", src.name, dest.name)
+    if gpio:
+        gpio.signal_processing()
+
+    return _run_production_vision_pipeline(
+        frame, image_path, pipeline_start, debug_imshow=False
+    )
 
 
 def _build_packet(
