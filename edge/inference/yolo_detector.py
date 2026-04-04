@@ -21,6 +21,21 @@ from models.schemas import BoundingBox, DetectionItem
 
 logger = logging.getLogger(__name__)
 
+
+def _matches_target_class(class_name: str, target_class: str, num_model_classes: int) -> bool:
+    """
+    피듀셜은 data.yaml 에서 fiducial / FIDUCIAL 등 대소문자가 달라도 인정.
+    단일 클래스 학습(피듀셜만)이면 클래스명이 달라도 인덱스 0 하나뿐이므로 허용.
+    """
+    if target_class != "FIDUCIAL":
+        return class_name == target_class
+    if class_name.lower() == "fiducial":
+        return True
+    if num_model_classes == 1:
+        return True
+    return False
+
+
 # 가중치 파일이 없을 때 개발 환경에서 사용할 더미 클래스 레이블
 DUMMY_CLASS_NAMES = {
     0: "FIDUCIAL",
@@ -124,6 +139,8 @@ class YoloDetector:
 
         detections: list[DetectionItem] = []
 
+        num_cls = len(self._model.names) if getattr(self._model, "names", None) else 0
+
         # results[0]: 단일 이미지 추론 결과
         # .boxes: 탐지된 박스 목록 (없으면 빈 텐서)
         if results and results[0].boxes is not None:
@@ -134,7 +151,7 @@ class YoloDetector:
                 conf: float = float(box.conf[0])
 
                 # target_class 필터 적용 (None이면 전체)
-                if target_class and class_name != target_class:
+                if target_class and not _matches_target_class(class_name, target_class, num_cls):
                     continue
 
                 # YOLO xywh → 좌상단 기준 정수 좌표로 변환
@@ -181,5 +198,5 @@ class YoloDetector:
         # 결함 클래스 중 하나라도 탐지되면 반환 (target_class=None → 전체)
         defects, ms = self.detect(roi, target_class=None)
         # 피듀셜 마크 결과는 결함 목록에서 제외
-        defects = [d for d in defects if d.defect_type != "FIDUCIAL"]
+        defects = [d for d in defects if d.defect_type.lower() != "fiducial"]
         return defects, ms
