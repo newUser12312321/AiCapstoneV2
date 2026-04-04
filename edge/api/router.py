@@ -93,6 +93,14 @@ async def compare_models_endpoint(body: CompareModelsBody) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except RuntimeError as e:
+        # 예: 카메라 장치 인덱스 오류 — Internal Server Error 대신 원인 전달
+        msg = str(e)
+        raise HTTPException(
+            status_code=503,
+            detail=msg + " — edge/.env 의 CAMERA_DEVICE_INDEX 를 0 등으로 바꾸거나, "
+            "대시보드에서 카메라 인덱스를 지정하세요.",
+        ) from e
 
     return {
         "input_source": src if src else "camera",

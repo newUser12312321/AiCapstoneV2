@@ -18,6 +18,7 @@ function parseWeights(text: string): string[] {
 export default function ModelComparePage() {
   const [weightsText, setWeightsText] = useState('best_a.pt\nbest_b.pt')
   const [imagePath, setImagePath] = useState('')
+  const [cameraIndex, setCameraIndex] = useState('')
   const [conf, setConf] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -32,11 +33,22 @@ export default function ModelComparePage() {
     setLoading(true)
     setError(null)
     setResult(null)
+    let camIndex: number | null = null
+    if (cameraIndex.trim() !== '') {
+      const n = Number.parseInt(cameraIndex.trim(), 10)
+      if (Number.isNaN(n)) {
+        setError('카메라 장치 인덱스는 정수만 입력하세요.')
+        setLoading(false)
+        return
+      }
+      camIndex = n
+    }
     try {
       const data = await postCompareModels({
         weights,
         image: imagePath.trim() || null,
         conf: conf.trim() ? Number(conf) : null,
+        camera_index: camIndex,
       })
       setResult(data)
     } catch (e) {
@@ -81,6 +93,20 @@ export default function ModelComparePage() {
               onChange={(e) => setImagePath(e.target.value)}
               placeholder="비우면 카메라로 즉시 1장 촬영"
             />
+          </div>
+          <div>
+            <label className="text-sm text-gray-400">카메라 장치 인덱스 (선택)</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              className="mt-1 w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              value={cameraIndex}
+              onChange={(e) => setCameraIndex(e.target.value)}
+              placeholder="비우면 엣지 .env 의 CAMERA_DEVICE_INDEX — 오류 시 0 입력"
+            />
+            <p className="text-[11px] text-gray-600 mt-1">
+              USB 웹캠은 보통 <code className="text-gray-500">0</code> (/dev/video0). Pi 카메라 모듈은 환경에 따라 0 또는 10 등.
+            </p>
           </div>
           <div>
             <label className="text-sm text-gray-400">conf (선택)</label>

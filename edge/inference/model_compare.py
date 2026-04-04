@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import cv2
 
@@ -55,6 +55,27 @@ def resolve_safe_capture_path(user_path: str) -> Path:
     return candidate
 
 
+def _frame_from_running_edge_camera() -> Optional[Any]:
+    """
+    main.py lifespan 이 이미 연 전역 카메라가 있으면 1프레임만 읽는다.
+    같은 /dev/video 를 두 번 열면(점유) 실패하는 경우가 많아 비교 API에서는 필수에 가깝다.
+    """
+    try:
+        import main as main_mod
+
+        cam = getattr(main_mod, "camera", None)
+        if cam is None:
+            return None
+        cap = getattr(cam, "_cap", None)
+        if cap is None or not cap.isOpened():
+            return None
+        logger.info("[model_compare] 전역 카메라(검사 파이프라인과 공유)로 1프레임 캡처")
+        return cam.capture()
+    except Exception as e:
+        logger.debug("[model_compare] 전역 카메라 미사용: %s", e)
+        return None
+
+
 def load_frame(image_path: str | None, camera_index: int) -> tuple[Any, str | None]:
     """BGR 프레임과 (이미지 경로 또는 None) 반환."""
     if image_path:
@@ -63,6 +84,10 @@ def load_frame(image_path: str | None, camera_index: int) -> tuple[Any, str | No
         if frame is None:
             raise RuntimeError(f"이미지 로드 실패: {p}")
         return frame, str(p.resolve())
+
+    existing = _frame_from_running_edge_camera()
+    if existing is not None:
+        return existing, None
 
     cam = CameraCapture(device_index=camera_index)
     cam.open()

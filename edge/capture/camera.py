@@ -13,7 +13,7 @@ import time
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 import cv2
 import numpy as np
@@ -62,12 +62,28 @@ class CameraCapture:
         """
         logger.info("[카메라] 장치 %d 열기 시도 (%dx%d)", self.device_index, self.width, self.height)
 
-        # OpenCV VideoCapture 초기화
-        # CAP_V4L2: 라즈베리파이에서 성능 최적화된 V4L2 백엔드 사용
-        self._cap = cv2.VideoCapture(self.device_index, cv2.CAP_V4L2)
+        # 여러 백엔드 순차 시도 (일부 환경에서 CAP_V4L2 만 실패하는 경우 있음)
+        dev_path = f"/dev/video{self.device_index}"
+        attempts: list[tuple[str, Callable[[], cv2.VideoCapture]]] = [
+            ("CAP_V4L2+index", lambda: cv2.VideoCapture(self.device_index, cv2.CAP_V4L2)),
+            ("default+index", lambda: cv2.VideoCapture(self.device_index)),
+            ("CAP_V4L2+path", lambda: cv2.VideoCapture(dev_path, cv2.CAP_V4L2)),
+            ("default+path", lambda: cv2.VideoCapture(dev_path)),
+        ]
+        self._cap = None
+        for label, factory in attempts:
+            cap = factory()
+            if cap.isOpened():
+                self._cap = cap
+                logger.info("[카메라] 열기 성공 (%s)", label)
+                break
+            cap.release()
 
-        if not self._cap.isOpened():
-            raise RuntimeError(f"카메라 장치 {self.device_index}를 열 수 없습니다.")
+        if self._cap is None or not self._cap.isOpened():
+            raise RuntimeError(
+                f"카메라 장치 {self.device_index} ({dev_path})를 열 수 없습니다. "
+                "다른 프로세스 점유 여부(fuser), video 그룹, 연결을 확인하세요."
+            )
 
         # 해상도 설정 (1920×1080 → 1080p)
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
