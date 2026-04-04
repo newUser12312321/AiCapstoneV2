@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     CAMERA_FOCUS_AUTO: bool = Field(default=False)
     # 수동 초점일 때만 사용 (0~255). 과거 하드코드 30과 동일 기본값
     CAMERA_FOCUS_ABSOLUTE: int = Field(default=30, ge=0, le=255)
+    # USB 재연결·전원 리셋 후 펌웨어가 focus_absolute 한 번만으로는 안 먹는 경우가 있어 재적용
+    CAMERA_FOCUS_MANUAL_DOUBLE_APPLY: bool = Field(default=True)
+    CAMERA_FOCUS_MANUAL_REAPPLY_DELAY_SEC: float = Field(default=0.25, ge=0.0, le=2.0)
+    # 수동 모드에서도 0보다 크면: 연속 AF를 이 시간(ms)만 돌린 뒤 AF 끄고 focus_absolute 적용 (재연결 후 흐림 완화)
+    CAMERA_FOCUS_POST_PLUG_AF_MS: int = Field(default=0, ge=0, le=10000)
 
     # ── YOLO 추론 설정 ───────────────────────────────────────────────────────
     # Stage 1: 피듀셜 마크 탐지 모델 (클래스: FIDUCIAL)

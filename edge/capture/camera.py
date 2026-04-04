@@ -149,6 +149,9 @@ class CameraCapture:
         장치 오픈 후 초점 적용.
 
         Logitech C922 등: `focus_auto` 가 없고 `focus_automatic_continuous` 만 있는 경우가 많음.
+        USB를 뺐다 꽂으면 렌즈·펌웨어가 리셋되어 첫 수동 초점 명령이 무시되는 경우가 있어,
+        (옵션) 잠깐 연속 AF로 맞춘 뒤 고정하거나, 동일 값을 지연 재적용한다.
+
         Permission denied 시: `sudo usermod -aG video pi` 후 재로그인.
         """
         dev = f"/dev/video{self.device_index}"
@@ -165,9 +168,33 @@ class CameraCapture:
             logger.info("[카메라] 수동 초점 시도 (focus_absolute=%d)", fa)
             self._run_v4l2(dev, "focus_auto", "0")
             self._run_v4l2(dev, "focus_automatic_continuous", "0")
-            self._run_v4l2(dev, "focus_absolute", str(fa))
+            time.sleep(0.05)
             self._opencv_set_autofocus(False)
+
+            warmup_ms = settings.CAMERA_FOCUS_POST_PLUG_AF_MS
+            if warmup_ms > 0:
+                logger.info(
+                    "[카메라] POST_PLUG_AF %dms — 연속 AF 후 수동값 고정 (USB 재연결 후 흐림 완화)",
+                    warmup_ms,
+                )
+                self._run_v4l2(dev, "focus_automatic_continuous", "1")
+                self._opencv_set_autofocus(True)
+                deadline = time.perf_counter() + (warmup_ms / 1000.0)
+                while time.perf_counter() < deadline:
+                    self._cap.grab()
+                self._run_v4l2(dev, "focus_automatic_continuous", "0")
+                self._run_v4l2(dev, "focus_auto", "0")
+                self._opencv_set_autofocus(False)
+                time.sleep(0.05)
+
+            self._run_v4l2(dev, "focus_absolute", str(fa))
             self._opencv_set_focus_absolute(fa)
+
+            if settings.CAMERA_FOCUS_MANUAL_DOUBLE_APPLY:
+                time.sleep(settings.CAMERA_FOCUS_MANUAL_REAPPLY_DELAY_SEC)
+                self._run_v4l2(dev, "focus_absolute", str(fa))
+                self._opencv_set_focus_absolute(fa)
+                logger.debug("[카메라] focus_absolute 재적용 완료")
 
         # AF/수동 적용 후 센서·렌즈 안정화 (프레임 버림)
         settle = 25 if settings.CAMERA_FOCUS_AUTO else 12
