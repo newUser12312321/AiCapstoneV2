@@ -27,9 +27,13 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import cv2
+
+# 캡처 저장·정적 서빙 경로 (settings와 무관, 항상 main.py 기준 edge/captures)
+CAPTURES_DIR = Path(__file__).resolve().parent / "captures"
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -145,9 +149,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 캡처 이미지 정적 서빙: /captures/<filename>.jpg
-app.mount("/captures", StaticFiles(directory="captures"), name="captures")
-
 # CORS 설정: 같은 LAN의 운영자 PC 브라우저에서 직접 접근 허용
 app.add_middleware(
     CORSMiddleware,
@@ -158,6 +159,10 @@ app.add_middleware(
 
 # 엣지 라우터 등록 (/edge/health, /edge/inspect/dummy 등)
 app.include_router(edge_router)
+
+# 캡처 이미지 정적 서빙 — edge/captures 고정 (uvicorn 실행 위치와 무관). 라우터보다 뒤에 마운트.
+CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/captures", StaticFiles(directory=str(CAPTURES_DIR)), name="captures")
 
 
 # ── 2-Stage 비전 검사 파이프라인 ──────────────────────────────────────────────
@@ -205,7 +210,7 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
         if gpio:
             gpio.signal_processing()  # 처리 중 LED 점멸
 
-        frame, image_path = camera.capture_and_save(save_dir="captures")
+        frame, image_path = camera.capture_and_save()
 
         # 디버그용: 캡처 이미지를 화면에 표시 (운영에서는 비활성화 가능)
         if settings.ENVIRONMENT == "development":

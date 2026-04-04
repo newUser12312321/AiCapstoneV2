@@ -18,13 +18,10 @@ from typing import Optional
 import cv2
 import numpy as np
 
-try:
-    from config.settings import settings, CAPTURES_DIR
-except ImportError:
-    # 구버전 settings.py (CAPTURES_DIR 없음) 호환
-    from config.settings import settings
+from config.settings import settings
 
-    CAPTURES_DIR = Path(__file__).resolve().parent.parent / "captures"
+# settings.py와 무관 — 항상 edge/captures (구버전 Pi 설정 파일과 충돌 없음)
+CAPTURES_DIR = Path(__file__).resolve().parent.parent / "captures"
 
 logger = logging.getLogger(__name__)
 

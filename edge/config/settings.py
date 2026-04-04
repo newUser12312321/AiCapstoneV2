@@ -24,10 +24,15 @@ class Settings(BaseSettings):
     SERVER_BASE_URL: str = Field(default="http://192.168.0.10:8080")
 
     # ── 카메라 설정 ──────────────────────────────────────────────────────────
-    # /dev/video0 → 0, /dev/video2 → 2
+    # /dev/video0 → 0, C922가 video1·video2만 있으면 1 또는 2
     CAMERA_DEVICE_INDEX: int = Field(default=0)
     CAMERA_WIDTH: int = Field(default=1920)
     CAMERA_HEIGHT: int = Field(default=1080)
+    # False: 예전 기본과 동일 — 오토포커스 끄고 focus_absolute만 사용(거리 고정 스테이션에 맞으면 유지)
+    # True: 거리가 자주 바뀔 때 v4l2 오토포커스
+    CAMERA_FOCUS_AUTO: bool = Field(default=False)
+    # 수동 초점일 때만 사용 (0~255). 과거 하드코드 30과 동일 기본값
+    CAMERA_FOCUS_ABSOLUTE: int = Field(default=30, ge=0, le=255)
 
     # ── YOLO 추론 설정 ───────────────────────────────────────────────────────
     # Stage 1: 피듀셜 마크 탐지 모델 (클래스: FIDUCIAL)
@@ -65,10 +70,12 @@ class Settings(BaseSettings):
 
     # pydantic-settings 설정:
     # .env 파일을 자동으로 찾아 읽고, 대소문자를 구분하지 않는다.
+    # extra='ignore': .env에 아직 모델에 없는 키가 있어도 기동 실패하지 않음(구버전 코드·부분 배포)
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
 
