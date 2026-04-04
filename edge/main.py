@@ -294,7 +294,16 @@ def _run_production_vision_pipeline(
             f2x, f2y = alignment.fiducial2.center_x, alignment.fiducial2.center_y
 
         logger.info("[파이프라인] STEP 2-B — 결함 탐지 (ROI)")
-        roi, roi_x, roi_y = crop_inspection_roi_with_offset(frame, alignment)
+        if settings.DEFECT_INFER_ON_FULL_DESKEW:
+            roi = frame
+            roi_x, roi_y = 0, 0
+            logger.info(
+                "[파이프라인] 결함 입력: deskew 전체 이미지 (%dx%d) — DEFECT_INFER_ON_FULL_DESKEW",
+                frame.shape[1],
+                frame.shape[0],
+            )
+        else:
+            roi, roi_x, roi_y = crop_inspection_roi_with_offset(frame, alignment)
         stage2 = defect_detector if settings.USE_SEPARATE_MODELS else detector
         defect_items, defect_ms = stage2.detect_defects(roi)
 

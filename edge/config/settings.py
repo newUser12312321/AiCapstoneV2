@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # False: best.pt 단일 모델 사용
     USE_SEPARATE_MODELS: bool = Field(default=False)
 
+    # True: Stage 2 결함 추론을 피듀셜 ROI 크롭이 아니라 deskew 직후 전체 프레임에 수행
+    # (yolo predict 와 동일한 입력 범위. ROI 밖 결함 누락 방지 — 오탐은 늘 수 있음)
+    DEFECT_INFER_ON_FULL_DESKEW: bool = Field(default=False)
+
     # ── FastAPI 서버 포트 ────────────────────────────────────────────────────
     EDGE_API_PORT: int = Field(default=8000)
 
