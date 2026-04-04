@@ -18,7 +18,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from config.settings import settings
+from config.settings import settings, CAPTURES_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -53,18 +53,11 @@ class CameraCapture:
 
     def open(self) -> None:
         """
-        카메라를 열고 해상도를 설정한 뒤 오토포커스를 비활성화한다.
+        카메라를 열고 해상도를 설정한다.
 
-        v4l2-ctl 명령 순서:
-        1. 오토포커스 끄기 (focus_auto=0)
-        2. 수동 초점값 설정 (focus_absolute=30: 가까운 피사체에 적합한 값)
-        3. 오토화이트밸런스 끄기 (white_balance_temperature_auto=0)
-        4. 자동 노출 끄기 (exposure_auto=1 → 수동)
+        초점은 .env의 CAMERA_FOCUS_AUTO / CAMERA_FOCUS_ABSOLUTE 로 제어한다.
         """
         logger.info("[카메라] 장치 %d 열기 시도 (%dx%d)", self.device_index, self.width, self.height)
-
-        # V4L2 오토포커스 비활성화 (라즈베리파이 리눅스 전용)
-        self._disable_autofocus()
 
         # OpenCV VideoCapture 초기화
         # CAP_V4L2: 라즈베리파이에서 성능 최적화된 V4L2 백엔드 사용
@@ -86,41 +79,76 @@ class CameraCapture:
         actual_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         logger.info("[카메라] 실제 해상도: %dx%d", actual_w, actual_h)
 
-        # 카메라 안정화 대기 (노출 자동 조정 시간 확보)
-        time.sleep(1.0)
+        # 초점: C922 등은 focus_auto 대신 focus_automatic_continuous 사용 · 권한은 video 그룹
+        self._apply_focus_after_open()
 
-    def _disable_autofocus(self) -> None:
-        """
-        v4l2-ctl 명령으로 오토포커스를 끄고 수동 초점값을 설정한다.
-        리눅스 환경이 아닌 경우(개발 PC)는 경고만 출력하고 진행한다.
-        """
-        v4l2_commands = [
-            # 오토포커스 비활성화 (0 = 수동)
-            ["v4l2-ctl", f"--device=/dev/video{self.device_index}",
-             "--set-ctrl=focus_auto=0"],
-            # 수동 초점 거리 설정 (0~255 범위, 30 ≈ 15cm 근접 촬영)
-            ["v4l2-ctl", f"--device=/dev/video{self.device_index}",
-             "--set-ctrl=focus_absolute=30"],
-        ]
+    def _run_v4l2(self, dev: str, ctrl: str, value: str) -> bool:
+        """v4l2-ctl 한 줄 실행. 성공 여부만 반환."""
+        cmd = ["v4l2-ctl", f"--device={dev}", f"--set-ctrl={ctrl}={value}"]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+            if result.returncode == 0:
+                logger.debug("[v4l2-ctl] OK %s=%s", ctrl, value)
+                return True
+            logger.debug("[v4l2-ctl] skip %s=%s: %s", ctrl, value, result.stderr.strip())
+        except FileNotFoundError:
+            return False
+        except subprocess.TimeoutExpired:
+            logger.warning("[v4l2-ctl] timeout %s", ctrl)
+        return False
 
-        for cmd in v4l2_commands:
-            try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                )
-                if result.returncode != 0:
-                    logger.warning("[v4l2-ctl] 명령 실패 (무시): %s", result.stderr.strip())
-                else:
-                    logger.debug("[v4l2-ctl] 성공: %s", " ".join(cmd[2:]))
-            except FileNotFoundError:
-                # v4l2-ctl이 설치되지 않은 환경(macOS, Windows)에서는 건너뜀
-                logger.warning("[v4l2-ctl] 명령을 찾을 수 없습니다. 개발 환경으로 간주하고 건너뜁니다.")
-                break
-            except subprocess.TimeoutExpired:
-                logger.warning("[v4l2-ctl] 명령 타임아웃")
+    def _apply_focus_after_open(self) -> None:
+        """
+        장치 오픈 후 초점 적용.
+
+        Logitech C922 등: `focus_auto` 가 없고 `focus_automatic_continuous` 만 있는 경우가 많음.
+        Permission denied 시: `sudo usermod -aG video pi` 후 재로그인.
+        """
+        dev = f"/dev/video{self.device_index}"
+
+        if settings.CAMERA_FOCUS_AUTO:
+            logger.info("[카메라] 오토포커스 시도 (CAMERA_FOCUS_AUTO=true)")
+            # 구 UVC / 일부 드라이버
+            self._run_v4l2(dev, "focus_auto", "1")
+            # C922·BRIO 계열에서 흔함 (0=수동 1=연속 AF)
+            self._run_v4l2(dev, "focus_automatic_continuous", "1")
+            self._opencv_set_autofocus(True)
+        else:
+            fa = settings.CAMERA_FOCUS_ABSOLUTE
+            logger.info("[카메라] 수동 초점 시도 (focus_absolute=%d)", fa)
+            self._run_v4l2(dev, "focus_auto", "0")
+            self._run_v4l2(dev, "focus_automatic_continuous", "0")
+            self._run_v4l2(dev, "focus_absolute", str(fa))
+            self._opencv_set_autofocus(False)
+            self._opencv_set_focus_absolute(fa)
+
+        # AF/수동 적용 후 센서·렌즈 안정화 (프레임 버림)
+        settle = 25 if settings.CAMERA_FOCUS_AUTO else 12
+        for _ in range(settle):
+            self._cap.grab()
+        time.sleep(1.2 if settings.CAMERA_FOCUS_AUTO else 0.5)
+
+    def _opencv_set_autofocus(self, enabled: bool) -> None:
+        """OpenCV 속성으로 AF 보조 (카메라·드라이버가 지원할 때만 동작)."""
+        if self._cap is None:
+            return
+        prop = getattr(cv2, "CAP_PROP_AUTOFOCUS", None)
+        if prop is None:
+            return
+        try:
+            self._cap.set(prop, 1.0 if enabled else 0.0)
+        except Exception as e:
+            logger.debug("[카메라] CAP_PROP_AUTOFOCUS 설정 생략: %s", e)
+
+    def _opencv_set_focus_absolute(self, value: int) -> None:
+        prop = getattr(cv2, "CAP_PROP_FOCUS", None)
+        if prop is None or self._cap is None:
+            return
+        try:
+            self._cap.set(prop, float(value))
+            logger.debug("[카메라] CAP_PROP_FOCUS=%d", value)
+        except Exception as e:
+            logger.debug("[카메라] CAP_PROP_FOCUS 설정 생략: %s", e)
 
     # ── 이미지 캡처 ───────────────────────────────────────────────────────────
 
@@ -151,7 +179,7 @@ class CameraCapture:
         logger.debug("[카메라] 캡처 완료: shape=%s", frame.shape)
         return frame
 
-    def capture_and_save(self, save_dir: str = "captures") -> tuple[np.ndarray, str]:
+    def capture_and_save(self, save_dir: str | None = None) -> tuple[np.ndarray, str]:
         """
         프레임을 캡처하고 타임스탬프 파일명으로 디스크에 저장한다.
 
@@ -160,12 +188,12 @@ class CameraCapture:
         """
         frame = self.capture()
 
-        # 저장 디렉토리가 없으면 생성
-        Path(save_dir).mkdir(parents=True, exist_ok=True)
+        base = Path(save_dir) if save_dir is not None else CAPTURES_DIR
+        base.mkdir(parents=True, exist_ok=True)
 
         # 파일명: captures/20260331_143000_123456.jpg
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        file_path = str(Path(save_dir) / f"{timestamp}.jpg")
+        file_path = str(base / f"{timestamp}.jpg")
 
         # JPEG 품질 95로 저장 (품질 ↔ 파일 크기 균형)
         cv2.imwrite(file_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
