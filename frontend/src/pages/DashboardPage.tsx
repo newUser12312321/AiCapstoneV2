@@ -16,7 +16,6 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Camera, FolderOpen, Loader2, Trash2 } from 'lucide-react'
 import StatCardGroup from '@/components/dashboard/StatCard'
-import FiducialOpsCardGroup from '@/components/dashboard/FiducialOpsCardGroup'
 import PassFailChart from '@/components/dashboard/PassFailChart'
 import TrendChart from '@/components/dashboard/TrendChart'
 import InspectionTable from '@/components/inspection/InspectionTable'
@@ -209,9 +208,6 @@ export default function DashboardPage() {
 
       {/* 1행: 통계 카드 4개 */}
       <StatCardGroup />
-
-      {/* 1b행: 피듀셜 운영 지표 (오늘 기준) */}
-      <FiducialOpsCardGroup />
 
       {/* 2행: 도넛 차트 + 트렌드 차트 */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">

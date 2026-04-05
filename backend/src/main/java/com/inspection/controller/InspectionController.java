@@ -1,6 +1,5 @@
 package com.inspection.controller;
 
-import com.inspection.dto.FiducialOperationalStatsDto;
 import com.inspection.dto.InspectionRequestDto;
 import com.inspection.dto.InspectionResponseDto;
 import com.inspection.service.InspectionService;
@@ -13,7 +12,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
@@ -28,7 +26,6 @@ import java.util.Map;
  * - GET    /api/inspections/{id}     → 단건 상세 조회
  * - GET    /api/inspections/recent   → 최근 N건 조회
  * - GET    /api/inspections/stats    → 통계 요약
- * - GET    /api/inspections/stats/fiducial → 피듀셜 운영 지표 (기간 선택, 기본=오늘)
  * - GET    /api/inspections/period   → 기간 필터 조회
  * - DELETE /api/inspections          → 전체 이력 삭제 (대시보드)
  *
@@ -138,38 +135,6 @@ public class InspectionController {
     public ResponseEntity<Map<String, Object>> getStatsSummary() {
         log.debug("[GET /api/inspections/stats] 통계 조회");
         return ResponseEntity.ok(inspectionService.getStatsSummary());
-    }
-
-    /**
-     * 피듀셜 관련 운영 지표 (정답 라벨 없이 DB 이력만 집계).
-     *
-     * <p>GET /api/inspections/stats/fiducial
-     * <p>쿼리 파라미터 from, to 를 생략하면 Asia/Seoul 기준 오늘 0시 ~ 현재 시각까지 집계한다.
-     * <p>둘 중 하나만 주면 400 — 둘 다 주거나 둘 다 생략해야 한다.
-     */
-    @GetMapping("/stats/fiducial")
-    public ResponseEntity<FiducialOperationalStatsDto> getFiducialOperationalStats(
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to) {
-
-        ZoneId zone = ZoneId.of("Asia/Seoul");
-        LocalDateTime now = LocalDateTime.now(zone);
-
-        if (from == null && to == null) {
-            from = now.toLocalDate().atStartOfDay();
-            to = now;
-        } else if (from == null || to == null) {
-            throw new IllegalArgumentException("from과 to는 함께 지정하거나 둘 다 생략하세요.");
-        }
-
-        if (from.isAfter(to)) {
-            throw new IllegalArgumentException("from은 to 이전이어야 합니다.");
-        }
-
-        log.debug("[GET /api/inspections/stats/fiducial] {} ~ {}", from, to);
-        return ResponseEntity.ok(inspectionService.getFiducialOperationalStats(from, to));
     }
 
     /**
