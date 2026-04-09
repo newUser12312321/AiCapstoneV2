@@ -42,6 +42,22 @@ export async function triggerInspectionFromFile(path: string): Promise<{ message
   return res.json() as Promise<{ message: string }>
 }
 
+/** 브라우저 파일 업로드로 검사 1회 (백그라운드). 결과는 Spring DB에 적재 */
+export async function triggerInspectionFromUpload(file: File): Promise<{ message: string }> {
+  const formData = new FormData()
+  formData.append('image', file)
+
+  const res = await fetch('/edge/inspect/upload', {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(detail || `${res.status} ${res.statusText}`)
+  }
+  return res.json() as Promise<{ message: string }>
+}
+
 export async function postCompareModels(
   body: CompareModelsRequest
 ): Promise<CompareModelsResponse> {

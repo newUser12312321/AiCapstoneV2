@@ -1,0 +1,15 @@
+.git
+.gitignore
+**/.DS_Store
+**/node_modules
+**/dist
+**/target
+**/.venv
+**/__pycache__
+**/*.pyc
+merged_dataset*
+synthetic_dataset*
+prepared_dataset*
+pcb-good-batch-01
+PCB_photo
+jong_photo

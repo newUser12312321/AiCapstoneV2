@@ -64,6 +64,58 @@ source .venv/bin/activate
 python main.py   # :8000
 ```
 
+## Docker로 팀 개발 환경 실행 (권장)
+
+아래 구성은 `mysql + backend + edge + frontend`를 한 번에 실행한다.
+
+### 팀원용 1분 실행 체크리스트
+
+- [ ] Docker Desktop 설치 후 실행 (`Engine running` 상태 확인)
+- [ ] 프로젝트 clone 후 루트 폴더 이동 (`AiCapstoneV2`)
+- [ ] 아래 명령 실행:
+
+```bash
+docker compose up --build
+```
+
+- [ ] 브라우저 접속: `http://localhost:5173`
+- [ ] 대시보드에서 **로컬 이미지 업로드로 검사** 버튼으로 테스트
+
+문제 발생 시 빠른 확인:
+
+- [ ] 포트 충돌 확인 (`5173`, `8080`, `8000`, `3306`)
+- [ ] 로그 확인: `docker compose logs -f`
+
+```bash
+docker compose up --build
+```
+
+- 프론트엔드: `http://localhost:5173`
+- 백엔드 API: `http://localhost:8080`
+- 엣지 FastAPI: `http://localhost:8000`
+- MySQL: `localhost:3306`
+
+중지:
+
+```bash
+docker compose down
+```
+
+데이터까지 초기화:
+
+```bash
+docker compose down -v
+```
+
+### 참고
+
+- 프론트엔드는 Vite 프록시를 사용한다.
+  - `/api` -> `VITE_API_PROXY_TARGET` (기본 `http://localhost:8080`)
+  - `/edge`, `/captures`, `/demo_samples` -> `VITE_EDGE_CAPTURE_URL`
+- Docker 실행 시 `VITE_API_PROXY_TARGET`은 자동으로 `http://backend:8080`을 사용한다.
+- Docker 실행 시 `VITE_EDGE_CAPTURE_URL`은 자동으로 `http://edge:8000`을 사용한다.
+- 대시보드에서 "로컬 이미지 업로드로 검사" 기능을 사용하면 웹캠 없이도 검사 파이프라인을 테스트할 수 있다.
+
 ## 기술 스택
 
 | 레이어 | 기술 |

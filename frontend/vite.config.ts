@@ -4,6 +4,8 @@ import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  const apiProxyTarget =
+    env.VITE_API_PROXY_TARGET?.trim() || 'http://localhost:8080'
   const edgeCaptureUrl =
     env.VITE_EDGE_CAPTURE_URL?.trim() || 'http://192.168.0.7:8000'
 
@@ -22,7 +24,7 @@ export default defineConfig(({ mode }) => {
       // /api/inspections → http://localhost:8080/api/inspections 로 포워딩
       proxy: {
         '/api': {
-          target: 'http://localhost:8080',
+          target: apiProxyTarget,
           changeOrigin: true,
         },
         // 엣지 FastAPI (/edge/*) — 모델 비교 등. VITE_EDGE_CAPTURE_URL 과 동일 호스트

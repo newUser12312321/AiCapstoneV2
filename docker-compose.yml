@@ -1,0 +1,65 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: aicapstone-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: your_password
+      MYSQL_DATABASE: inspection_db
+      TZ: Asia/Seoul
+    ports:
+      - "330:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pyour_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: aicapstone-backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/inspection_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: your_password
+      TZ: Asia/Seoul
+    ports:
+      - "8080:8080"
+
+  edge:
+    build:
+      context: ./edge
+    container_name: aicapstone-edge
+    depends_on:
+      - backend
+    environment:
+      SERVER_BASE_URL: http://backend:8080
+      ENVIRONMENT: development
+      CAMERA_DEVICE_INDEX: 0
+      TZ: Asia/Seoul
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./edge/captures:/app/captures
+      - ./edge/demo_samples:/app/demo_samples
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: aicapstone-frontend
+    depends_on:
+      - backend
+      - edge
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8080
+      VITE_EDGE_CAPTURE_URL: http://edge:8000
+    ports:
+      - "5173:5173"
+
+volumes:
+  mysql_data:

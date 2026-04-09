@@ -24,6 +24,7 @@ import {
   fetchDemoSamplePaths,
   triggerEdgeInspection,
   triggerInspectionFromFile,
+  triggerInspectionFromUpload,
 } from '@/api/edgeApi'
 import { useRecentInspections } from '@/hooks/useInspectionData'
 
@@ -32,6 +33,7 @@ export default function DashboardPage() {
   const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [demoPath, setDemoPath] = useState('')
   const [captureFile, setCaptureFile] = useState('')
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
 
   /* 최근 15건 — 대시보드 하단 실시간 피드 테이블 */
   const { data: recentLogs = [], isLoading } = useRecentInspections(15)
@@ -78,6 +80,19 @@ export default function DashboardPage() {
     },
     onError: (e: Error) => {
       setActionMsg({ type: 'err', text: e.message || '삭제 실패' })
+    },
+  })
+
+  const uploadInspectMutation = useMutation({
+    mutationFn: triggerInspectionFromUpload,
+    onSuccess: (data) => {
+      setActionMsg({ type: 'ok', text: data.message })
+      setUploadFile(null)
+      setTimeout(() => invalidateInspections(), 2500)
+      setTimeout(() => invalidateInspections(), 6000)
+    },
+    onError: (e: Error) => {
+      setActionMsg({ type: 'err', text: e.message || '업로드 검사 실패' })
     },
   })
 
@@ -190,6 +205,40 @@ export default function DashboardPage() {
               페이지를 새로고침하면 위 목록이 채워집니다. 이미 촬영된 파일은{' '}
               <code className="text-gray-400">captures/</code> 기준 파일명만 입력해도 됩니다.
             </p>
+            <div className="pt-2 border-t border-gray-800 mt-1 space-y-2">
+              <label className="text-[11px] text-gray-500 font-medium uppercase tracking-wide block">
+                로컬 이미지 업로드로 검사
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.bmp,.webp,image/*"
+                  onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-xs text-gray-300 file:mr-2 file:px-2 file:py-1.5 file:rounded-md file:border-0 file:bg-gray-800 file:text-gray-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!uploadFile) return
+                    setActionMsg(null)
+                    uploadInspectMutation.mutate(uploadFile)
+                  }}
+                  disabled={!uploadFile || uploadInspectMutation.isPending}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white transition-colors"
+                >
+                  {uploadInspectMutation.isPending ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <FolderOpen size={16} />
+                  )}
+                  업로드 검사
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-600 leading-snug">
+                팀원 PC에서 이미지를 바로 올려 검사할 수 있습니다. 업로드 파일은 엣지 서버의{' '}
+                <code className="text-gray-400">edge/captures/</code>에 저장됩니다.
+              </p>
+            </div>
           </div>
         </div>
       </div>

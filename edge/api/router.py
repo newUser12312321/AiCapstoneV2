@@ -10,13 +10,14 @@ Base URL: http://<라즈베리파이_IP>:8000
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 import cv2
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from api.sender import create_dummy_packet, ServerSender
@@ -195,6 +196,7 @@ async def trigger_inspection(background_tasks: BackgroundTasks) -> dict[str, str
 
 _EDGE_ROOT = Path(__file__).resolve().parent.parent
 _DEMO_SAMPLES_DIR = _EDGE_ROOT / "demo_samples"
+_CAPTURES_DIR = _EDGE_ROOT / "captures"
 _IMAGE_SUFFIX = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
@@ -206,6 +208,60 @@ class InspectFromFileBody(BaseModel):
         min_length=1,
         description='예: demo_samples/synthetic/foo.jpg 또는 20260404_120000_xxx.jpg',
     )
+
+
+@router.post("/inspect/upload", summary="이미지 업로드 후 검사 (캡처 생략)")
+async def inspect_from_uploaded_file(
+    background_tasks: BackgroundTasks,
+    image: UploadFile = File(..., description="검사할 이미지 파일 (.jpg/.jpeg/.png/.bmp/.webp)"),
+) -> dict[str, str]:
+    """
+    브라우저에서 업로드한 이미지를 edge/captures 에 저장한 뒤 동일 검사 파이프라인을 실행한다.
+    라즈베리파이·웹캠이 없는 팀원의 로컬 테스트 경로로 사용한다.
+    """
+    filename = image.filename or "upload.jpg"
+    suffix = Path(filename).suffix.lower()
+    if suffix not in _IMAGE_SUFFIX:
+        raise HTTPException(status_code=400, detail="지원하지 않는 이미지 형식입니다.")
+
+    raw = await image.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="업로드된 파일이 비어 있습니다.")
+
+    # 원본 파일명의 특수문자를 제거해 안전한 저장 파일명을 만든다.
+    stem = re.sub(r"[^A-Za-z0-9._-]", "_", Path(filename).stem)[:40] or "upload"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    save_name = f"{ts}_{stem}{suffix}"
+    _CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+    save_path = _CAPTURES_DIR / save_name
+    save_path.write_bytes(raw)
+
+    if cv2.imread(str(save_path)) is None:
+        save_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="이미지를 디코딩할 수 없습니다.")
+
+    try:
+        import main as main_mod
+
+        det = getattr(main_mod, "detector", None)
+        f1 = getattr(main_mod, "fiducial_detector", None)
+        f2 = getattr(main_mod, "defect_detector", None)
+        if settings.USE_SEPARATE_MODELS:
+            if f1 is None or f2 is None:
+                raise HTTPException(status_code=503, detail="YOLO 분리 모델이 로드되지 않았습니다.")
+        elif det is None:
+            raise HTTPException(status_code=503, detail="YOLO 모델이 로드되지 않았습니다.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"모델 상태 확인 실패: {e}") from e
+
+    from main import run_inspection_pipeline_from_source_file
+
+    background_tasks.add_task(run_inspection_pipeline_from_source_file, save_name)
+    return {
+        "message": f"업로드 이미지 검사를 시작했습니다: {save_name}",
+    }
 
 
 @router.get("/inspect/demo-samples", summary="데모용 샘플 이미지 목록 (demo_samples/)")
