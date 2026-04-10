@@ -75,14 +75,32 @@ function formatDateTime(iso: string): { date: string; time: string } {
   }
 }
 
+/** 피듀셜 중심 좌표 (보정 후 기준, 픽셀) — 테이블용 짧은 문자열 */
+function formatFiducialCells(log: InspectionLog): string {
+  const p1 =
+    log.fiducial1X != null && log.fiducial1Y != null
+      ? `F1 (${log.fiducial1X}, ${log.fiducial1Y})`
+      : null
+  const p2 =
+    log.fiducial2X != null && log.fiducial2Y != null
+      ? `F2 (${log.fiducial2X}, ${log.fiducial2Y})`
+      : null
+  if (p1 && p2) return `${p1} · ${p2}`
+  if (p1) return p1
+  if (p2) return p2
+  return '—'
+}
+
 // ── 스켈레톤 ─────────────────────────────────────────────────────────────────
+
+const TABLE_COL_COUNT = 9
 
 function TableSkeleton() {
   return (
     <>
       {Array.from({ length: 8 }).map((_, i) => (
         <tr key={i} className="border-b border-gray-800 animate-pulse">
-          {Array.from({ length: 7 }).map((_, j) => (
+          {Array.from({ length: TABLE_COL_COUNT }).map((_, j) => (
             <td key={j} className="px-4 py-3">
               <div className="h-3.5 bg-gray-800 rounded w-3/4" />
             </td>
@@ -124,7 +142,17 @@ export default function InspectionTable({
           {/* 헤더 */}
           <thead>
             <tr className="bg-gray-900 text-left">
-              {['ID', '시각', '디바이스', '결과', '결함', '오차 (°)', '추론 (ms)', ''].map((h) => (
+              {[
+                'ID',
+                '시각',
+                '디바이스',
+                '결과',
+                '결함',
+                '피듀셜 (px)',
+                '오차 (°)',
+                '추론 (ms)',
+                '',
+              ].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider"
@@ -142,7 +170,7 @@ export default function InspectionTable({
             ) : filtered.length === 0 ? (
               /* 데이터 없음 */
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-gray-500 text-sm">
+                <td colSpan={TABLE_COL_COUNT} className="px-4 py-12 text-center text-gray-500 text-sm">
                   검사 이력이 없습니다.
                 </td>
               </tr>
@@ -183,6 +211,14 @@ export default function InspectionTable({
                     {/* 결함 태그 */}
                     <td className="px-4 py-3">
                       <DefectTags defects={log.defects} />
+                    </td>
+
+                    {/* 피듀셜 중심 좌표 (deskew 후 좌표계) */}
+                    <td
+                      className="px-4 py-3 text-[11px] text-gray-400 font-mono leading-snug max-w-[14rem]"
+                      title="보정 이미지 기준 피듀셜 중심 (px)"
+                    >
+                      {formatFiducialCells(log)}
                     </td>
 
                     {/* 오차 각도 */}

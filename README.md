@@ -111,7 +111,7 @@ docker compose down -v
 
 - 프론트엔드는 Vite 프록시를 사용한다.
   - `/api` -> `VITE_API_PROXY_TARGET` (기본 `http://localhost:8080`)
-  - `/edge`, `/captures`, `/demo_samples` -> `VITE_EDGE_CAPTURE_URL`
+  - `/edge`, `/captures` -> `VITE_EDGE_CAPTURE_URL`
 - Docker 실행 시 `VITE_API_PROXY_TARGET`은 자동으로 `http://backend:8080`을 사용한다.
 - Docker 실행 시 `VITE_EDGE_CAPTURE_URL`은 자동으로 `http://edge:8000`을 사용한다.
 - 대시보드에서 "로컬 이미지 업로드로 검사" 기능을 사용하면 웹캠 없이도 검사 파이프라인을 테스트할 수 있다.

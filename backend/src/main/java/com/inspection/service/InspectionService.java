@@ -69,6 +69,10 @@ public class InspectionService {
                 .inferenceTimeMs(dto.getInferenceTimeMs())
                 .totalTimeMs(dto.getTotalTimeMs())
                 .imagePath(dto.getImagePath())
+                .silkscreenOcrRaw(dto.getSilkscreenOcrRaw())
+                .silkscreenOcrMatched(dto.getSilkscreenOcrMatched())
+                .silkscreenOcrSkippedReason(dto.getSilkscreenOcrSkippedReason())
+                .silkscreenOcrMs(dto.getSilkscreenOcrMs())
                 .inspectedAt(dto.getInspectedAt())
                 .build();
 

@@ -8,6 +8,7 @@ venv/
 edge/.env
 edge/weights/*.pt
 edge/weights/*.onnx
+edge/captures/
 
 # ===== Java / Maven (Backend) =====
 backend/target/

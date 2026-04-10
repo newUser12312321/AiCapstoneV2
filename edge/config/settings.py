@@ -102,6 +102,23 @@ class Settings(BaseSettings):
     # 하위 호환·문서용: 과거 "허용 오차 초과 시 FAIL" 모드에서 사용. 파이프라인은 MAX_DESKEW_* 기준.
     MAX_ANGLE_ERROR_DEG: float = Field(default=3.0)
 
+    # ── 실크스크린 OCR (선택, 기본 비활성) ───────────────────────────────────
+    # True 시 deskew 직후 ROI에서 Tesseract OCR (OS에 tesseract + pip pytesseract 필요)
+    SILKSCREEN_OCR_ENABLED: bool = Field(default=False)
+    # 정규식이 있는데 매칭 실패 시 최종 FAIL에 포함 (결함 SILKSCREEN_MISMATCH 추가)
+    SILKSCREEN_ENFORCE_ON_MISMATCH: bool = Field(default=False)
+    # ROI = deskew 이미지 대비 정규화 좌표 (0~1). 기본: 좌측 실크 스트립 근사
+    SILKSCREEN_ROI_X_NORM: float = Field(default=0.02, ge=0.0, le=1.0)
+    SILKSCREEN_ROI_Y_NORM: float = Field(default=0.08, ge=0.0, le=1.0)
+    SILKSCREEN_ROI_W_NORM: float = Field(default=0.34, ge=0.01, le=1.0)
+    SILKSCREEN_ROI_H_NORM: float = Field(default=0.82, ge=0.01, le=1.0)
+    # 예: (GT-125A|GT-126A|G-SERIES). 비우면 매칭 검사 안 함(raw만 기록)
+    SILKSCREEN_TEXT_REGEX: Optional[str] = Field(default=None)
+    # Tesseract 페이지 분할: 6=균일 블록, 11=희박 텍스트
+    SILKSCREEN_TESSERACT_PSM: int = Field(default=6, ge=0, le=13)
+    # tesseract 실행 파일 경로 (미설정 시 PATH)
+    TESSERACT_CMD: Optional[str] = Field(default=None)
+
     @field_validator("YOLO_FIDUCIAL_CONFIDENCE_THRESHOLD", "YOLO_DEFECT_CONFIDENCE_THRESHOLD", mode="before")
     @classmethod
     def _empty_conf_to_none(cls, v: object) -> object:

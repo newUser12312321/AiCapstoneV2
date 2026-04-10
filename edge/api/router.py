@@ -136,18 +136,17 @@ async def trigger_inspection(background_tasks: BackgroundTasks) -> dict[str, str
 
 
 _EDGE_ROOT = Path(__file__).resolve().parent.parent
-_DEMO_SAMPLES_DIR = _EDGE_ROOT / "demo_samples"
 _CAPTURES_DIR = _EDGE_ROOT / "captures"
 _IMAGE_SUFFIX = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 class InspectFromFileBody(BaseModel):
-    """저장된 이미지로 검사 — edge/captures 또는 edge/demo_samples 기준 상대 경로."""
+    """저장된 이미지로 검사 — edge/captures 기준 상대 경로."""
 
     path: str = Field(
         ...,
         min_length=1,
-        description='예: demo_samples/synthetic/foo.jpg 또는 20260404_120000_xxx.jpg',
+        description='예: 20260404_120000_xxx.jpg 또는 subdir/foo.jpg',
     )
 
 
@@ -205,29 +204,13 @@ async def inspect_from_uploaded_file(
     }
 
 
-@router.get("/inspect/demo-samples", summary="데모용 샘플 이미지 목록 (demo_samples/)")
-async def list_demo_sample_images() -> dict[str, Any]:
-    """
-    edge/demo_samples 아래의 이미지 파일 목록을 반환한다.
-    합성 데이터를 Pi에 복사한 뒤 대시보드에서 선택해 검사할 때 사용.
-    """
-    if not _DEMO_SAMPLES_DIR.is_dir():
-        return {"paths": [], "root": "demo_samples"}
-    paths: list[str] = []
-    for p in sorted(_DEMO_SAMPLES_DIR.rglob("*")):
-        if p.is_file() and p.suffix.lower() in _IMAGE_SUFFIX:
-            rel = p.relative_to(_EDGE_ROOT)
-            paths.append(str(rel).replace("\\", "/"))
-    return {"paths": paths[:500], "root": "demo_samples"}
-
-
 @router.post("/inspect/from-file", summary="저장 이미지 파일로 검사 (캡처 생략)")
 async def inspect_from_file(
     body: InspectFromFileBody,
     background_tasks: BackgroundTasks,
 ) -> dict[str, str]:
     """
-    카메라 대신 edge/captures 또는 edge/demo_samples 아래 파일로 동일 검사 파이프라인을 실행한다.
+    카메라 대신 edge/captures 아래 파일로 동일 검사 파이프라인을 실행한다.
     결과는 Spring Boot DB로 전송된다.
     """
     from inference.model_compare import resolve_safe_inspection_source_image

@@ -489,6 +489,38 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
               )}
               <MetaRow label="추론 시간"   value={log.inferenceTimeMs != null ? `${log.inferenceTimeMs}ms` : '—'} />
               <MetaRow label="총 처리"     value={log.totalTimeMs != null ? `${log.totalTimeMs}ms` : '—'} />
+              {(log.silkscreenOcrRaw != null ||
+                log.silkscreenOcrMatched != null ||
+                log.silkscreenOcrSkippedReason != null ||
+                log.silkscreenOcrMs != null) && (
+                <>
+                  <MetaRow
+                    label="실크 OCR"
+                    value={
+                      log.silkscreenOcrSkippedReason
+                        ? log.silkscreenOcrSkippedReason
+                        : [
+                            log.silkscreenOcrMatched != null
+                              ? log.silkscreenOcrMatched
+                                ? '정규식 일치'
+                                : '정규식 불일치'
+                              : null,
+                            log.silkscreenOcrMs != null ? `${log.silkscreenOcrMs}ms` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || '—'
+                    }
+                  />
+                  {log.silkscreenOcrRaw != null && (
+                    <MetaRow
+                      label="실크 인식문"
+                      value={log.silkscreenOcrRaw.length > 120
+                        ? `${log.silkscreenOcrRaw.slice(0, 120)}…`
+                        : log.silkscreenOcrRaw}
+                    />
+                  )}
+                </>
+              )}
             </dl>
 
           </div>
