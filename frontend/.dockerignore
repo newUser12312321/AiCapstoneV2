@@ -1,0 +1,9 @@
+# 호스트 node_modules·빌드 산출물이 COPY 시 섞이면 Linux 이미지가 깨지거나 옛 번들이 재사용됨
+node_modules
+dist
+.git
+.gitignore
+*.md
+.env
+.env.*
+!.env.example

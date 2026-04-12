@@ -325,7 +325,11 @@ def _run_production_vision_pipeline(
 
         logger.info("[파이프라인] 결함 탐지: %d건", len(defect_items))
 
-        final_result = InspectionResult.FAIL if defect_items else InspectionResult.PASS
+        if settings.FAIL_ON_ANY_YOLO_DETECTION:
+            final_result = InspectionResult.FAIL if defect_items else InspectionResult.PASS
+        else:
+            # 부품/영역 다클래스 표시용: 박스는 전부 전송, 판정은 정렬만 만족하면 PASS
+            final_result = InspectionResult.PASS
 
         defect_payloads = [
             DefectPayload(

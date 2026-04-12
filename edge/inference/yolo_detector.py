@@ -11,6 +11,7 @@ Ultralytics 라이브러리를 사용하여 모델을 로드하고,
 
 import time
 import logging
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
@@ -103,11 +104,16 @@ class YoloDetector:
                     "[YOLO] 가중치 파일 없음: %s → YOLOv8n 기본 모델로 대체합니다.",
                     self.weights_path
                 )
-                # 기본 공개 모델로 대체 (개발/테스트 용도)
                 self._model = YOLO("yolov8n.pt")
             else:
                 self._model = YOLO(str(self.weights_path))
                 logger.info("[YOLO] 커스텀 모델 로드 완료: %s", self.weights_path)
+
+            names = getattr(self._model, "names", None)
+            if names:
+                logger.info("[YOLO] 클래스 맵(nc=%s): %s", len(names), dict(names))
+            else:
+                logger.warning("[YOLO] 모델에 names 속성 없음 — 가중치/버전 확인")
 
             logger.info("[YOLO] 모델 준비 완료 (confidence 임계값: %.2f)", self.confidence_threshold)
 
@@ -150,6 +156,8 @@ class YoloDetector:
         results = self._model.predict(
             source=image,
             conf=conf_threshold,
+            imgsz=settings.YOLO_PREDICT_IMGSZ,
+            augment=settings.YOLO_PREDICT_AUGMENT,
             verbose=False,
         )
 
@@ -224,6 +232,14 @@ class YoloDetector:
             target_class=None,
             conf=settings.effective_defect_confidence(),
         )
+        logger.info(
+            "[YOLO] Stage2 임계값 통과(피듀셜 제거 전) 클래스별: %s",
+            dict(Counter(d.defect_type for d in defects)),
+        )
         # 피듀셜 마크 결과는 결함 목록에서 제외
         defects = [d for d in defects if "fiducial" not in d.defect_type.lower()]
+        logger.info(
+            "[YOLO] Stage2 전송용(피듀셜 제외) 클래스별: %s",
+            dict(Counter(d.defect_type for d in defects)),
+        )
         return defects, ms

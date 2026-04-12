@@ -6,7 +6,7 @@
  */
 
 import { NavLink } from 'react-router-dom'
-import { BarChart2, ClipboardList, GitCompare, Settings } from 'lucide-react'
+import { BarChart2, ClipboardList, Settings } from 'lucide-react'
 import clsx from 'clsx'
 
 /** 네비게이션 메뉴 항목 정의 */
@@ -21,12 +21,6 @@ const NAV_ITEMS = [
     to:    '/history',
     icon:  ClipboardList,
     label: '검사 이력',
-    end:   false,
-  },
-  {
-    to:    '/compare',
-    icon:  GitCompare,
-    label: '모델 비교',
     end:   false,
   },
   {

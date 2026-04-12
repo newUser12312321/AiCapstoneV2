@@ -1,89 +1,39 @@
 /**
- * 결함 바운딩박스 오버레이 뷰어 컴포넌트
- *
- * 선택된 검사 이력의 캡처 이미지 위에 YOLO 탐지 결과(바운딩박스)를
- * SVG 오버레이로 렌더링한다.
- *
- * 동작 원리:
- *   1. useInspectionById(id)로 단건 검사 상세 데이터를 로드
- *   2. imagePath가 `*_deskew.*`이면 같은 이름의 원본과 보정 후를 나란히 표시하고,
- *      피듀셜/결함 오버레이는 보정 후에만 그린다.
- *   3. 이미지 위에 <svg>를 absolute 포지셔닝으로 겹쳐서
- *      각 결함의 bboxX/Y/Width/Height를 <rect>로 그린다.
- *   4. 로드된 이미지의 naturalWidth/Height(보정 후 캔버스 확대 등 반영)와 표시 크기 비율로
- *      좌표를 스케일 변환한다.
- *
- * 이미지가 없을 때는 더미 좌표 그리드를 대신 표시한다.
+ * 검사 상세 뷰어 — 보정 전/후 이미지와 피듀셜(F1·F2) 중심 좌표만 오버레이한다.
+ * 결함(YOLO 고정홀 등) 박스는 표시하지 않는다.
  */
 
 import { useRef, useState, useEffect, type ReactNode } from 'react'
 import { X, ImageOff, AlertCircle } from 'lucide-react'
 import { useInspectionById } from '@/hooks/useInspectionData'
-import { DEFECT_COLOR, DEFECT_LABEL } from '@/types/inspection'
-import type { DefectDetail } from '@/types/inspection'
+import type { InspectionLog } from '@/types/inspection'
 
 // ── 이미지 로드 전 기본값 (로드 후 naturalWidth/Height 사용) ───────────────
 const DEFAULT_REF_WIDTH = 1920
 const DEFAULT_REF_HEIGHT = 1080
 
-// ── 바운딩박스 단일 렌더러 ────────────────────────────────────────────────────
-
-interface BboxOverlayProps {
-  defect:  DefectDetail
-  scaleX:  number  // 표시 너비 / 원본 너비
-  scaleY:  number  // 표시 높이 / 원본 높이
+/** F1·F2 중심 좌표가 모두 있을 때 화면 픽셀 기준 거리 */
+function fiducialDistancePx(log: {
+  fiducial1X: number | null
+  fiducial1Y: number | null
+  fiducial2X: number | null
+  fiducial2Y: number | null
+}): number | null {
+  const { fiducial1X: x1, fiducial1Y: y1, fiducial2X: x2, fiducial2Y: y2 } = log
+  if (x1 == null || y1 == null || x2 == null || y2 == null) return null
+  return Math.hypot(x2 - x1, y2 - y1)
 }
 
-function BboxOverlay({ defect, scaleX, scaleY }: BboxOverlayProps) {
-  const color  = DEFECT_COLOR[defect.defectType] ?? '#9ca3af'
-  const label  = DEFECT_LABEL[defect.defectType] ?? defect.defectType
-  const conf   = `${(defect.confidence * 100).toFixed(0)}%`
-
-  /* 원본 좌표 → 표시 좌표 스케일 변환 */
-  const x = defect.bboxX     * scaleX
-  const y = defect.bboxY     * scaleY
-  const w = defect.bboxWidth  * scaleX
-  const h = defect.bboxHeight * scaleY
-
-  return (
-    <g>
-      {/* 바운딩박스 테두리 */}
-      <rect
-        x={x} y={y} width={w} height={h}
-        fill="transparent"
-        stroke={color}
-        strokeWidth={2}
-        strokeDasharray="4 2"
-      />
-
-      {/* 상단 레이블 배경 */}
-      <rect
-        x={x} y={y - 18}
-        width={label.length * 8 + conf.length * 7 + 16}
-        height={17}
-        fill={color}
-        rx={3}
-      />
-
-      {/* 레이블 텍스트 */}
-      <text
-        x={x + 5} y={y - 5}
-        fill="white"
-        fontSize={11}
-        fontWeight="600"
-      >
-        {label} {conf}
-      </text>
-
-      {/* 모서리 강조 포인트 */}
-      {[[x, y], [x + w, y], [x, y + h], [x + w, y + h]].map(([cx, cy], i) => (
-        <circle key={i} cx={cx} cy={cy} r={3} fill={color} />
-      ))}
-    </g>
-  )
+/**
+ * 엣지 `alignment.compute_alignment`: 피듀셜이 2개 미만이면 angle_error_deg = 999.
+ * 이 경우 Stage2(결함) 검사는 실행되지 않으며, 결함 박스 데이터도 없다.
+ */
+function isFiducialAlignmentSentinel(log: InspectionLog): boolean {
+  const a = log.angleErrorDeg
+  return a != null && a >= 500
 }
 
-// ── 피듀셜 마크 오버레이 ──────────────────────────────────────────────────────
+// ── 피듀셜 마크 오버레이 (결함 YOLO 박스는 이 뷰어에서 그리지 않음) ───────────
 
 function FiducialMarker({
   x,
@@ -174,6 +124,28 @@ function FiducialMarker({
       >
         {cap}
       </text>
+      {/* 중심 좌표 (원본 픽셀) — 배경·큰 글자 */}
+      <rect
+        x={sx - 88}
+        y={sy + arm + 2}
+        width={176}
+        height={28}
+        rx={6}
+        fill="rgba(15,23,42,0.95)"
+        stroke="rgba(56,189,248,0.85)"
+        strokeWidth={1.5}
+      />
+      <text
+        x={sx}
+        y={sy + arm + 21}
+        fill="#f0f9ff"
+        fontSize={14}
+        fontWeight={700}
+        textAnchor="middle"
+        fontFamily="ui-monospace, monospace"
+      >
+        {`(${Math.round(x)}, ${Math.round(y)}) px`}
+      </text>
     </g>
   )
 }
@@ -238,6 +210,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
   const rawStored = deriveRawImagePathFromStored(log?.imagePath ?? null)
   const rawSrc = rawStored ? resolveImageSrc(rawStored) : null
   const showSideBySide = Boolean(rawSrc && deskewSrc)
+  const f12DistancePx = log != null ? fiducialDistancePx(log) : null
 
   /* 오버레이는 보정 후 이미지 기준 */
   const imgRef = useRef<HTMLImageElement>(null)
@@ -279,7 +252,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
         <div className="flex items-center gap-2">
           <AlertCircle size={15} className="text-indigo-400" />
           <span className="text-sm font-semibold text-gray-200">
-            결함 상세 뷰어
+            검사 상세 (피듀셜)
             {log && (
               <span className="ml-2 text-xs text-gray-500 font-normal">
                 #{log.id} — {log.result === 'PASS' ? '✅ PASS' : '❌ FAIL'}
@@ -295,6 +268,19 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
           <X size={16} />
         </button>
       </div>
+
+      {log && isFiducialAlignmentSentinel(log) && (
+        <div className="px-4 py-2.5 bg-amber-950/50 border-b border-amber-900/40 text-[11px] text-amber-100/95 leading-relaxed">
+          <strong className="text-amber-200">정렬(피듀셜) 단계에서 실패했습니다.</strong> 마크가 2개
+          이상 잡히지 않아 기울기 값이 999°로 기록됩니다. 이 상태에서는{' '}
+          <strong>결함 검사가 실행되지 않습니다</strong> — 표시할 결함 박스가 없는 것이 정상입니다.
+          <span className="text-amber-200/80">
+            {' '}
+            엣지 <code className="text-amber-300/90">YOLO_FIDUCIAL_CONFIDENCE_THRESHOLD</code>를
+            0.2~0.35로 낮추거나, 학습 이미지와 비슷한 밝기·구도로 촬영해 보세요.
+          </span>
+        </div>
+      )}
 
       {/* 본문 */}
       {isLoading ? (
@@ -334,7 +320,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                   )}
                 </div>
                 <div className="relative flex-1 min-w-0 bg-gray-950">
-                  <PanelBadge>보정 후 · 피듀셜/결함</PanelBadge>
+                  <PanelBadge>보정 후 · 피듀셜</PanelBadge>
                   {deskewSrc && !deskewLoadError ? (
                     <>
                       <img
@@ -376,9 +362,6 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                             scaleY={scaleY}
                           />
                         )}
-                        {log.defects.map((d, i) => (
-                          <BboxOverlay key={i} defect={d} scaleX={scaleX} scaleY={scaleY} />
-                        ))}
                       </svg>
                     </>
                   ) : (
@@ -430,9 +413,6 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                       scaleY={scaleY}
                     />
                   )}
-                  {log.defects.map((d, i) => (
-                    <BboxOverlay key={i} defect={d} scaleX={scaleX} scaleY={scaleY} />
-                  ))}
                 </svg>
               </div>
             ) : deskewSrc && deskewLoadError ? (
@@ -469,7 +449,13 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
               <MetaRow label="검사 시각"   value={new Date(log.inspectedAt).toLocaleString('ko-KR')} />
               <MetaRow
                 label="촬영 시 기울기"
-                value={log.angleErrorDeg != null ? `${log.angleErrorDeg.toFixed(2)}° (보정 전)` : '—'}
+                value={
+                  log.angleErrorDeg == null
+                    ? '—'
+                    : isFiducialAlignmentSentinel(log)
+                      ? `${log.angleErrorDeg.toFixed(2)}° — 피듀셜 2개 미탐지(결함검사 생략)`
+                      : `${log.angleErrorDeg.toFixed(2)}° (보정 전)`
+                }
               />
               {(log.fiducial1Confidence != null || log.fiducial2Confidence != null) && (
                 <MetaRow
@@ -486,37 +472,25 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                     .join(' · ')}
                 />
               )}
+              {log.fiducial1X != null && log.fiducial1Y != null && (
+                <MetaCoordRow
+                  label="F1 중심 (px)"
+                  value={`(${log.fiducial1X}, ${log.fiducial1Y})`}
+                />
+              )}
+              {log.fiducial2X != null && log.fiducial2Y != null && (
+                <MetaCoordRow
+                  label="F2 중심 (px)"
+                  value={`(${log.fiducial2X}, ${log.fiducial2Y})`}
+                />
+              )}
+              {f12DistancePx != null && (
+                <MetaRow label="F1–F2 거리" value={`${f12DistancePx.toFixed(1)} px`} />
+              )}
               <MetaRow label="추론 시간"   value={log.inferenceTimeMs != null ? `${log.inferenceTimeMs}ms` : '—'} />
               <MetaRow label="총 처리"     value={log.totalTimeMs != null ? `${log.totalTimeMs}ms` : '—'} />
             </dl>
 
-            {/* 결함 목록 */}
-            {log.defects.length > 0 && (
-              <>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">
-                  탐지 결함 ({log.defects.length}건)
-                </h3>
-                <ul className="space-y-1.5">
-                  {log.defects.map((d, i) => (
-                    <li
-                      key={i}
-                      className="flex items-center gap-2 text-xs"
-                    >
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: DEFECT_COLOR[d.defectType] ?? '#9ca3af' }}
-                      />
-                      <span className="text-gray-300">
-                        {DEFECT_LABEL[d.defectType] ?? d.defectType}
-                      </span>
-                      <span className="ml-auto text-gray-500 font-mono">
-                        {(d.confidence * 100).toFixed(0)}%
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
           </div>
         </div>
       )}
@@ -530,6 +504,18 @@ function MetaRow({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between gap-2">
       <dt className="text-gray-500 shrink-0">{label}</dt>
       <dd className="text-gray-300 font-mono text-right truncate">{value}</dd>
+    </div>
+  )
+}
+
+/** 피듀셜 중심 좌표 — 패널에서 가장 눈에 띄게 */
+function MetaCoordRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border-2 border-sky-600/50 bg-slate-950 px-3 py-2.5 shadow-lg shadow-sky-950/40">
+      <dt className="text-[11px] font-semibold text-sky-200/90 tracking-wide">{label}</dt>
+      <dd className="text-base sm:text-lg font-bold font-mono text-sky-300 tabular-nums tracking-tight break-all">
+        {value}
+      </dd>
     </div>
   )
 }

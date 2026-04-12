@@ -1,8 +1,7 @@
 """
 여러 YOLO 가중치(.pt)를 동일한 실제 촬영(또는 동일 이미지)으로 비교한다.
 
-구현은 inference.model_compare 를 사용한다. HTTP 대시보드용 API는
-POST /edge/compare-models 를 참고.
+구현은 inference.model_compare 를 사용한다.
 
 실행 예 (edge 디렉터리):
 

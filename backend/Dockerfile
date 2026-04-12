@@ -11,6 +11,9 @@ WORKDIR /app
 
 COPY --from=builder /app/target/*.jar app.jar
 
+# compose와 같은 네트워크에서 mysql 호스트명 사용 (application-docker.yml)
+ENV SPRING_PROFILES_ACTIVE=docker
+
 EXPOSE 8080
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

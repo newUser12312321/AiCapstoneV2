@@ -6,8 +6,9 @@ services:
       MYSQL_ROOT_PASSWORD: your_password
       MYSQL_DATABASE: inspection_db
       TZ: Asia/Seoul
+    # 호스트에 MySQL이 이미 3306을 쓰는 경우가 많아 3307로 노출 (컨테이너 내부는 3306)
     ports:
-      - "330:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -42,11 +43,18 @@ services:
       ENVIRONMENT: development
       CAMERA_DEVICE_INDEX: 0
       TZ: Asia/Seoul
+      # PCB 다클래스: deskew 전체 프레임 추론 + 부품 박스만 표시 시 합격 유지
+      DEFECT_INFER_ON_FULL_DESKEW: "true"
+      FAIL_ON_ANY_YOLO_DETECTION: "false"
+      YOLO_PREDICT_IMGSZ: "1024"
+      YOLO_DEFECT_CONFIDENCE_THRESHOLD: "0.15"
     ports:
       - "8000:8000"
     volumes:
       - ./edge/captures:/app/captures
       - ./edge/demo_samples:/app/demo_samples
+      # Colab 등에서 받은 best.pt 를 edge/weights/best.pt 로 두면 컨테이너에 반영됨
+      - ./edge/weights:/app/weights
 
   frontend:
     build:

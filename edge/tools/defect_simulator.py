@@ -1,16 +1,25 @@
 """
 PCB 결함 시뮬레이터
 정상 기판 이미지에 가상 결함(단선·까짐·핀홀·단락)을 합성하여 학습 데이터를 생성합니다.
+
+합성 스타일(개략):
+- 단선: 배선 방향의 좁은 끊김 스트립(로컬 색 샘플 + 가장자리 링), 타원 덩어리 채색 지양
+- 까짐: 불규칙 폴리라인 스크래치 + 국소 블렌딩
+- 핀홀: 미세 원 + 얇은 링
+- 단락: 구리색 브리지 선분 + 하이라이트
 """
 
 import cv2
 import numpy as np
-import json
 import os
 import random
 from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
+from typing import Literal, Optional, Tuple
+
+# 기본 증강: 엣지/피듀셜 파이프라인과 동일한 구도를 유지 (뒤집기·회전 제외)
+# → 학습·검증 시 피듀셜이 안 잡히는 현상 완화. 강한 증강은 --augment-strength full
+AugmentStrength = Literal["inference_safe", "full"]
 
 
 @dataclass
@@ -36,11 +45,44 @@ CLASS_NAMES = {
 }
 
 
+def _clamp_i(v: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, v))
+
+
+def _sample_local_median_bgr(img: np.ndarray, cx: int, cy: int, half: int = 14) -> np.ndarray:
+    """주변 패치에서 BGR 중앙값 — 배선·마스크 색에 맞춤."""
+    h, w = img.shape[:2]
+    x1, x2 = _clamp_i(cx - half, 0, w - 1), _clamp_i(cx + half, 0, w - 1)
+    y1, y2 = _clamp_i(cy - half, 0, h - 1), _clamp_i(cy + half, 0, h - 1)
+    patch = img[y1 : y2 + 1, x1 : x2 + 1]
+    if patch.size == 0:
+        return np.array([60.0, 95.0, 75.0])
+    return np.median(patch.reshape(-1, 3), axis=0).astype(np.float32)
+
+
+def _blend_with_mask(
+    base: np.ndarray, mask_f: np.ndarray, color_bgr: np.ndarray, strength: float
+) -> None:
+    """mask_f: HxW float 0~1, base 이미지를 in-place로 블렌딩."""
+    s = np.clip(mask_f * strength, 0.0, 1.0)[:, :, np.newaxis]
+    c = color_bgr.reshape(1, 1, 3)
+    out = base.astype(np.float32) * (1.0 - s) + c * s
+    base[:, :, :] = np.clip(out, 0, 255).astype(np.uint8)
+
+
+def _line_endpoints(
+    cx: int, cy: int, length: float, angle_deg: float
+) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+    rad = np.radians(angle_deg)
+    dx = (length / 2) * np.cos(rad)
+    dy = (length / 2) * np.sin(rad)
+    return (int(cx - dx), int(cy - dy)), (int(cx + dx), int(cy + dy))
+
+
 def add_trace_open(img: np.ndarray, region: Optional[tuple] = None) -> tuple[np.ndarray, BBox]:
     """
-    단선(Trace Open) 결함 추가
-    구리 배선 위에 검은 갭을 그려서 단선처럼 보이게 합니다.
-    region: (x1, y1, x2, y2) 결함을 넣을 영역. None이면 랜덤 선택.
+    단선(Trace Open) — 배선 방향의 **좁은 끊김 갭**(얇은 스트립).
+    주변 색을 샘플링해 어둡게 에칭된 듯 보이게 합니다(타원 덩어리 대신).
     """
     h, w = img.shape[:2]
     result = img.copy()
@@ -53,29 +95,63 @@ def add_trace_open(img: np.ndarray, region: Optional[tuple] = None) -> tuple[np.
         cx = random.randint(x1, x2)
         cy = random.randint(y1, y2)
 
-    gap_w = random.randint(12, 28)
-    gap_h = random.randint(6, 14)
-    angle = random.uniform(-30, 30)
+    angle = random.uniform(-40.0, 40.0)
+    length = float(random.randint(36, 92))
+    thickness = random.randint(3, 7)
 
-    # 갭 영역을 어두운 색(배경색)으로 채워 단선처럼 표현
-    rot = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
-    bg_color = _sample_background_color(img, cx, cy)
-    cv2.ellipse(result, (cx, cy), (gap_w, gap_h), angle, 0, 360, bg_color, -1)
-    _add_noise_patch(result, cx, cy, gap_w + 4, gap_h + 2)
+    p1, p2 = _line_endpoints(cx, cy, length, angle)
+    p1 = (_clamp_i(p1[0], 4, w - 5), _clamp_i(p1[1], 4, h - 5))
+    p2 = (_clamp_i(p2[0], 4, w - 5), _clamp_i(p2[1], 4, h - 5))
 
-    x_center = cx / w
-    y_center = cy / h
-    bbox_w = (gap_w * 2 + 10) / w
-    bbox_h = (gap_h * 2 + 8) / h
-    bbox = BBox(x_center, y_center, bbox_w, bbox_h, CLASS_TRACE_OPEN)
+    # 선분을 따라 몇 곳에서 샘플 → 갭 색(어두운 기판/에칭)
+    samples = []
+    for t in (0.2, 0.5, 0.8):
+        sx = int(p1[0] + t * (p2[0] - p1[0]))
+        sy = int(p1[1] + t * (p2[1] - p1[1]))
+        samples.append(_sample_local_median_bgr(img, sx, sy, 10))
+    base_col = np.mean(samples, axis=0)
+    # FR4/에칭 느낌: 채도 낮추고 어둡게
+    gap_bgr = base_col * np.array([0.42, 0.48, 0.44], dtype=np.float32) + np.array(
+        [8.0, 12.0, 10.0], dtype=np.float32
+    )
+
+    mask = np.zeros((h, w), dtype=np.uint8)
+    cv2.line(mask, p1, p2, 255, thickness=thickness, lineType=cv2.LINE_AA)
+    mask_f = cv2.GaussianBlur(mask.astype(np.float32), (0, 0), sigmaX=1.2, sigmaY=1.2) / 255.0
+    _blend_with_mask(result, mask_f, gap_bgr, strength=0.82)
+
+    # 스트립 가장자리(두꺼운 마스크 − 안쪽 코어)에 잔동/번짐
+    inner = np.zeros((h, w), dtype=np.uint8)
+    cv2.line(
+        inner,
+        p1,
+        p2,
+        255,
+        thickness=max(1, thickness - 2),
+        lineType=cv2.LINE_AA,
+    )
+    ring = cv2.subtract(mask, inner)
+    ring_f = cv2.GaussianBlur(ring.astype(np.float32), (3, 3), 0) / 255.0
+    rim = base_col * np.array([1.06, 0.96, 0.88], dtype=np.float32)
+    _blend_with_mask(result, ring_f, rim, strength=0.38)
+
+    xs = [p1[0], p2[0], cx]
+    ys = [p1[1], p2[1], cy]
+    pad = thickness + 10
+    bx1, bx2 = _clamp_i(min(xs) - pad, 0, w - 1), _clamp_i(max(xs) + pad, 0, w - 1)
+    by1, by2 = _clamp_i(min(ys) - pad, 0, h - 1), _clamp_i(max(ys) + pad, 0, h - 1)
+    bw, bh = bx2 - bx1 + 1, by2 - by1 + 1
+    x_center = (bx1 + bx2) / 2 / w
+    y_center = (by1 + by2) / 2 / h
+    bbox = BBox(x_center, y_center, bw / w, bh / h, CLASS_TRACE_OPEN)
 
     return result, bbox
 
 
 def add_metal_damage(img: np.ndarray, region: Optional[tuple] = None) -> tuple[np.ndarray, BBox]:
     """
-    까짐(Metal Damage) 결함 추가
-    구리 표면이 긁히거나 벗겨진 것처럼 불규칙한 패치를 적용합니다.
+    까짐(Metal Damage) — **불규칙한 얇은 스크래치 폴리라인**(채워진 원/다각형 덩어리 대신).
+    각 점 근처 색을 섞어 긁힌 자국처럼 보이게 합니다.
     """
     h, w = img.shape[:2]
     result = img.copy()
@@ -88,47 +164,62 @@ def add_metal_damage(img: np.ndarray, region: Optional[tuple] = None) -> tuple[n
         cx = random.randint(x1, x2)
         cy = random.randint(y1, y2)
 
-    size = random.randint(18, 40)
+    n = random.randint(6, 14)
+    pts: list[list[int]] = []
+    x, y = float(cx), float(cy)
+    step = random.uniform(4.0, 9.0)
+    ang = random.uniform(0.0, 2 * np.pi)
+    for _ in range(n):
+        pts.append([int(x), int(y)])
+        ang += random.uniform(-0.9, 0.9)
+        x += step * np.cos(ang) + random.uniform(-2.5, 2.5)
+        y += step * np.sin(ang) + random.uniform(-2.5, 2.5)
+        x = float(_clamp_i(int(x), 8, w - 9))
+        y = float(_clamp_i(int(y), 8, h - 9))
 
-    # 불규칙한 다각형으로 까짐 영역 표현
-    num_points = random.randint(5, 9)
-    pts = []
-    for i in range(num_points):
-        angle = 2 * np.pi * i / num_points
-        r = size * random.uniform(0.5, 1.0)
-        pts.append([int(cx + r * np.cos(angle)), int(cy + r * np.sin(angle))])
+    arr = np.array(pts, dtype=np.int32)
+    scratch_w = random.randint(1, 2)
 
-    pts = np.array(pts, dtype=np.int32)
-
-    # 노출된 기재 색 (베이지/갈색 계열)
-    damage_color = (
-        random.randint(80, 130),
-        random.randint(100, 160),
-        random.randint(110, 170),
-    )
-    cv2.fillPoly(result, [pts], damage_color)
-
-    # 경계 블러 처리로 자연스럽게
     mask = np.zeros((h, w), dtype=np.uint8)
-    cv2.fillPoly(mask, [pts], 255)
-    blurred = cv2.GaussianBlur(result, (5, 5), 0)
-    result = np.where(mask[:, :, np.newaxis] > 0, blurred, result)
+    cv2.polylines(mask, [arr], isClosed=False, color=255, thickness=scratch_w, lineType=cv2.LINE_AA)
+    dil = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    mask = cv2.dilate(mask, dil, iterations=random.randint(0, 1))
+    mask_f = cv2.GaussianBlur(mask.astype(np.float32), (0, 0), sigmaX=0.9) / 255.0
 
-    _add_noise_patch(result, cx, cy, size + 2, size + 2)
+    for i, (px, py) in enumerate(pts):
+        loc = _sample_local_median_bgr(result, px, py, 8)
+        # 밝은 스크래치 하이라이트 + 약간 탈색
+        sc = loc * np.array([1.12, 1.05, 0.92], dtype=np.float32) + np.array(
+            [14.0, 10.0, 6.0], dtype=np.float32
+        )
+        sc = np.clip(sc, 0, 255)
+        pt_mask = np.zeros((h, w), dtype=np.float32)
+        cv2.circle(pt_mask, (px, py), random.randint(2, 4), 1.0, -1)
+        pt_mask = cv2.GaussianBlur(pt_mask, (5, 5), 0)
+        _blend_with_mask(result, pt_mask, sc, strength=0.55 + 0.1 * (i % 2))
 
-    x_center = cx / w
-    y_center = cy / h
-    bbox_w = (size * 2 + 12) / w
-    bbox_h = (size * 2 + 12) / h
-    bbox = BBox(x_center, y_center, bbox_w, bbox_h, CLASS_METAL_DAMAGE)
+    col_mid = _sample_local_median_bgr(result, pts[len(pts) // 2][0], pts[len(pts) // 2][1], 12)
+    darker = col_mid * np.array([0.75, 0.78, 0.82], dtype=np.float32)
+    _blend_with_mask(result, mask_f, darker, strength=0.62)
+
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    pad = 14
+    bx1 = _clamp_i(min(xs) - pad, 0, w - 1)
+    bx2 = _clamp_i(max(xs) + pad, 0, w - 1)
+    by1 = _clamp_i(min(ys) - pad, 0, h - 1)
+    by2 = _clamp_i(max(ys) + pad, 0, h - 1)
+    bw, bh = bx2 - bx1 + 1, by2 - by1 + 1
+    x_center = (bx1 + bx2) / 2 / w
+    y_center = (by1 + by2) / 2 / h
+    bbox = BBox(x_center, y_center, bw / w, bh / h, CLASS_METAL_DAMAGE)
 
     return result, bbox
 
 
 def add_pinhole(img: np.ndarray, region: Optional[tuple] = None) -> tuple[np.ndarray, BBox]:
     """
-    핀홀(Pinhole) 결함 추가
-    솔더 마스크에 미세한 구멍이 생긴 것처럼 표현합니다.
+    핀홀(Pinhole) — 마스크의 **아주 작은 원형 착색**(주변보다 약간 어둡거나 밝게, 얇은 링).
     """
     h, w = img.shape[:2]
     result = img.copy()
@@ -141,25 +232,34 @@ def add_pinhole(img: np.ndarray, region: Optional[tuple] = None) -> tuple[np.nda
         cx = random.randint(x1, x2)
         cy = random.randint(y1, y2)
 
-    radius = random.randint(2, 6)
-    # 구멍 — 밝은 구리색 노출
-    hole_color = (random.randint(140, 190), random.randint(120, 170), random.randint(50, 100))
-    cv2.circle(result, (cx, cy), radius, hole_color, -1)
-    # 테두리 — 어두운 산화 링
-    cv2.circle(result, (cx, cy), radius + 1, (40, 40, 40), 1)
+    r = random.randint(1, 4)
+    loc = _sample_local_median_bgr(result, cx, cy, 10)
+    # 구멍 내부: 미세하게 어두워진 마스크 + 중심만 동 색 기운
+    inner = loc * np.array([0.72, 0.76, 0.74], dtype=np.float32) + np.array([5, 8, 12], dtype=np.float32)
 
-    x_center = cx / w
-    y_center = cy / h
-    size = (radius * 2 + 6)
-    bbox = BBox(x_center, y_center, size / w, size / h, CLASS_PINHOLE)
+    hole = np.zeros((h, w), dtype=np.float32)
+    cv2.circle(hole, (cx, cy), r, 1.0, -1)
+    hole = cv2.GaussianBlur(hole, (0, 0), sigmaX=0.55)
+    _blend_with_mask(result, hole, inner, strength=0.78)
+
+    ring = np.zeros((h, w), dtype=np.uint8)
+    cv2.circle(ring, (cx, cy), r + 1, 255, 1)
+    ring_i = np.zeros((h, w), dtype=np.uint8)
+    cv2.circle(ring_i, (cx, cy), max(0, r - 1), 255, -1)
+    ring_m = cv2.subtract(ring, ring_i).astype(np.float32) / 255.0
+    ring_m = cv2.GaussianBlur(ring_m, (3, 3), 0)
+    dark_ring = loc * np.array([0.45, 0.5, 0.48], dtype=np.float32)
+    _blend_with_mask(result, ring_m, dark_ring, strength=0.55)
+
+    d = (r + 3) * 2
+    bbox = BBox(cx / w, cy / h, d / w, d / h, CLASS_PINHOLE)
 
     return result, bbox
 
 
 def add_short(img: np.ndarray, region: Optional[tuple] = None) -> tuple[np.ndarray, BBox]:
     """
-    단락(Short) 결함 추가
-    두 배선이 연결된 것처럼 구리색 브릿지를 그립니다.
+    단락(Short) — 두 트랙을 잇는 **얇은 구리 브리지**(선분 + 주변 색 블렌드).
     """
     h, w = img.shape[:2]
     result = img.copy()
@@ -172,48 +272,40 @@ def add_short(img: np.ndarray, region: Optional[tuple] = None) -> tuple[np.ndarr
         cx = random.randint(x1, x2)
         cy = random.randint(y1, y2)
 
-    length = random.randint(15, 35)
-    thickness = random.randint(3, 7)
-    angle = random.uniform(0, 180)
+    length = float(random.randint(18, 44))
+    thickness = random.randint(2, 5)
+    angle = random.uniform(0.0, 180.0)
+    p1, p2 = _line_endpoints(cx, cy, length, angle)
+    p1 = (_clamp_i(p1[0], 4, w - 5), _clamp_i(p1[1], 4, h - 5))
+    p2 = (_clamp_i(p2[0], 4, w - 5), _clamp_i(p2[1], 4, h - 5))
 
-    dx = int(length * np.cos(np.radians(angle)))
-    dy = int(length * np.sin(np.radians(angle)))
+    mx, my = (p1[0] + p2[0]) // 2, (p1[1] + p2[1]) // 2
+    loc = _sample_local_median_bgr(result, mx, my, 12)
+    # BGR에서 구리 느낌: B 중간·G·R 높게
+    copper = loc * 0.35 + np.array([42.0, 118.0, 198.0], dtype=np.float32)
+    copper = np.clip(copper, 0, 255)
 
-    # 구리색 브릿지
-    copper_color = (random.randint(30, 80), random.randint(120, 180), random.randint(160, 210))
-    cv2.line(result, (cx - dx // 2, cy - dy // 2), (cx + dx // 2, cy + dy // 2), copper_color, thickness)
-    _add_noise_patch(result, cx, cy, length // 2 + 4, thickness + 4)
+    bridge = np.zeros((h, w), dtype=np.uint8)
+    cv2.line(bridge, p1, p2, 255, thickness=thickness, lineType=cv2.LINE_AA)
+    bridge_f = cv2.GaussianBlur(bridge.astype(np.float32), (0, 0), sigmaX=0.85) / 255.0
+    _blend_with_mask(result, bridge_f, copper, strength=0.72)
 
-    x_center = cx / w
-    y_center = cy / h
-    bbox = BBox(x_center, y_center, (abs(dx) + 16) / w, (abs(dy) + 16) / h, CLASS_SHORT)
+    hi = np.zeros((h, w), dtype=np.uint8)
+    cv2.line(hi, p1, p2, 255, thickness=max(1, thickness - 1), lineType=cv2.LINE_AA)
+    hi_f = cv2.GaussianBlur(hi.astype(np.float32), (3, 3), 0) / 255.0
+    spec = np.clip(copper * 1.15 + 20.0, 0, 255)
+    _blend_with_mask(result, hi_f, spec, strength=0.25)
+
+    xs, ys = [p1[0], p2[0]], [p1[1], p2[1]]
+    pad = thickness + 12
+    bx1 = _clamp_i(min(xs) - pad, 0, w - 1)
+    bx2 = _clamp_i(max(xs) + pad, 0, w - 1)
+    by1 = _clamp_i(min(ys) - pad, 0, h - 1)
+    by2 = _clamp_i(max(ys) + pad, 0, h - 1)
+    bw, bh = bx2 - bx1 + 1, by2 - by1 + 1
+    bbox = BBox((bx1 + bx2) / 2 / w, (by1 + by2) / 2 / h, bw / w, bh / h, CLASS_SHORT)
 
     return result, bbox
-
-
-def _sample_background_color(img: np.ndarray, cx: int, cy: int) -> tuple:
-    """이미지 코너에서 배경색 샘플링 (기재색 추정)"""
-    h, w = img.shape[:2]
-    corners = [
-        img[10:30, 10:30],
-        img[10:30, w - 30:w - 10],
-        img[h - 30:h - 10, 10:30],
-        img[h - 30:h - 10, w - 30:w - 10],
-    ]
-    sample = np.concatenate([c.reshape(-1, 3) for c in corners], axis=0)
-    mean_color = sample.mean(axis=0)
-    return tuple(int(c) for c in mean_color)
-
-
-def _add_noise_patch(img: np.ndarray, cx: int, cy: int, w: int, h: int):
-    """결함 주변에 약간의 노이즈를 추가해 자연스럽게 만들기"""
-    x1 = max(0, cx - w)
-    y1 = max(0, cy - h)
-    x2 = min(img.shape[1], cx + w)
-    y2 = min(img.shape[0], cy + h)
-    patch = img[y1:y2, x1:x2].astype(np.float32)
-    noise = np.random.normal(0, 4, patch.shape)
-    img[y1:y2, x1:x2] = np.clip(patch + noise, 0, 255).astype(np.uint8)
 
 
 DEFECT_FUNCTIONS = {
@@ -230,6 +322,7 @@ def generate_defect_dataset(
     defects_per_image: int = 3,
     augment_count: int = 5,
     defect_types: list = None,
+    augment_strength: AugmentStrength = "inference_safe",
 ):
     """
     정상 PCB 이미지들로부터 결함 데이터셋을 생성합니다.
@@ -240,6 +333,9 @@ def generate_defect_dataset(
         defects_per_image: 한 이미지에 넣을 결함 수 (1~4 권장)
         augment_count: 이미지 1장당 생성할 변형 수
         defect_types: 사용할 결함 유형 목록 (None이면 전체 사용)
+        augment_strength:
+            inference_safe — 밝기·대비만 약하게 (뒤집기/회전/강노이즈 없음). 엣지 검사와 호환.
+            full — 기존 랜덤 플립·회전·노이즈 (학습 데이터 다양도↑, 피듀셜 탐지 실패 가능↑)
     """
     if defect_types is None:
         defect_types = list(DEFECT_FUNCTIONS.keys())
@@ -271,8 +367,8 @@ def generate_defect_dataset(
             img = orig.copy()
             bboxes = []
 
-            # 기본 augmentation (밝기, 대비, 회전 등)
-            img = _apply_basic_augmentation(img)
+            # 결함 합성 전 증강 — full 은 기하 변환으로 피듀셜 YOLO와 도메인 불일치 가능
+            img = _apply_basic_augmentation(img, strength=augment_strength)
 
             # 결함 랜덤 추가
             num_defects = random.randint(1, defects_per_image)
@@ -302,29 +398,39 @@ def generate_defect_dataset(
     _write_data_yaml(output_dir, defect_types)
 
 
-def _apply_basic_augmentation(img: np.ndarray) -> np.ndarray:
-    """기본 이미지 augmentation (밝기/대비/회전/플립)"""
-    # 밝기/대비 랜덤 조정
-    alpha = random.uniform(0.85, 1.15)  # 대비
-    beta = random.randint(-20, 20)       # 밝기
+def _apply_basic_augmentation(
+    img: np.ndarray, strength: AugmentStrength = "inference_safe"
+) -> np.ndarray:
+    """
+    기본 이미지 augmentation.
+
+    inference_safe: 밝기·대비만 좁은 범위로 조정. 피듀셜 2점 기반 정렬 파이프라인과
+    같은 보드 방향·가장자리를 유지해 엣지 단일 YOLO(피듀셜+결함) 추론과 맞춘다.
+
+    full: 플립·회전·노이즈 포함. 학습 세트 다양도는 올라가나 엣지에서 피듀셜 미검출(999°)이
+    잦아질 수 있음(특히 BORDER_REPLICATE 끝 번짐).
+    """
+    if strength == "inference_safe":
+        alpha = random.uniform(0.93, 1.07)
+        beta = random.randint(-12, 12)
+        return cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
+
+    # ── full (기존 동작, 회전 시 가장자리 번짐 완화) ──
+    alpha = random.uniform(0.85, 1.15)
+    beta = random.randint(-20, 20)
     img = cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
 
-    # 랜덤 수평 플립
     if random.random() < 0.5:
         img = cv2.flip(img, 1)
-
-    # 랜덤 수직 플립
     if random.random() < 0.3:
         img = cv2.flip(img, 0)
-
-    # 약간의 회전 (±5도 이내)
     if random.random() < 0.4:
         h, w = img.shape[:2]
         angle = random.uniform(-5, 5)
         M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-        img = cv2.warpAffine(img, M, (w, h), borderMode=cv2.BORDER_REPLICATE)
-
-    # 가우시안 노이즈
+        img = cv2.warpAffine(
+            img, M, (w, h), borderMode=cv2.BORDER_REFLECT_101
+        )
     if random.random() < 0.3:
         noise = np.random.normal(0, 3, img.shape).astype(np.float32)
         img = np.clip(img.astype(np.float32) + noise, 0, 255).astype(np.uint8)
@@ -403,6 +509,12 @@ if __name__ == "__main__":
         help="생성할 결함 타입 목록(콤마 구분). 예: trace_open,metal_damage",
     )
     parser.add_argument("--save", help="미리보기 저장 경로 (preview 모드)")
+    parser.add_argument(
+        "--augment-strength",
+        choices=["inference_safe", "full"],
+        default="inference_safe",
+        help="inference_safe: 밝기·대비만(기본, 엣지 피듀셜 호환) | full: 플립·회전·노이즈 포함",
+    )
     args = parser.parse_args()
 
     if args.mode == "preview":
@@ -421,4 +533,5 @@ if __name__ == "__main__":
             defects_per_image=args.defects,
             augment_count=args.count,
             defect_types=valid_types,
+            augment_strength=args.augment_strength,
         )

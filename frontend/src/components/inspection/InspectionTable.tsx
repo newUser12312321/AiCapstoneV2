@@ -15,7 +15,7 @@ import { useState } from 'react'
 import { ChevronRight, AlertCircle } from 'lucide-react'
 import clsx from 'clsx'
 import type { InspectionLog } from '@/types/inspection'
-import { DEFECT_LABEL, DEFECT_COLOR } from '@/types/inspection'
+import { defectDisplayName, DEFECT_COLOR } from '@/types/inspection'
 import DefectViewer from './DefectViewer'
 
 // ── 보조 컴포넌트 ─────────────────────────────────────────────────────────────
@@ -36,14 +36,20 @@ function ResultBadge({ result }: { result: 'PASS' | 'FAIL' }) {
   )
 }
 
+/** 테이블에 표시할 결함 — 고정홀(mount_hole)은 피듀셜 뷰와 맞춰 숨김 */
+function defectsVisibleInTable(defects: InspectionLog['defects']) {
+  return defects.filter((d) => d.defectType.toLowerCase() !== 'mount_hole')
+}
+
 /** 결함 종류 태그 목록 */
 function DefectTags({ defects }: { defects: InspectionLog['defects'] }) {
-  if (!defects.length) {
+  const visible = defectsVisibleInTable(defects)
+  if (!visible.length) {
     return <span className="text-xs text-gray-600">—</span>
   }
   return (
     <div className="flex flex-wrap gap-1">
-      {defects.map((d, i) => (
+      {visible.map((d, i) => (
         <span
           key={i}
           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium"
@@ -53,7 +59,7 @@ function DefectTags({ defects }: { defects: InspectionLog['defects'] }) {
           }}
         >
           <AlertCircle size={10} />
-          {DEFECT_LABEL[d.defectType] ?? d.defectType}
+          {defectDisplayName(d.defectType)}
         </span>
       ))}
     </div>

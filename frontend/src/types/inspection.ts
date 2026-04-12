@@ -92,6 +92,18 @@ export const DEFECT_LABEL: Record<string, string> = {
   TRACE_OPEN:       '단선',
   METAL_DAMAGE:     '까짐',
   FIDUCIAL_MISSING: '마크 누락',
+  // Ultralytics data.yaml / Colab 병합 클래스 (소문자 snake_case)
+  trace_open:     '단선',
+  metal_damage:   '까짐',
+  pinhole:        '핀홀',
+  short:          '단락',
+  // PCB 통합 YOLO (data.yaml 클래스명과 동일)
+  mount_hole:           '고정홀',
+  gold_finger_row:      '금핑거 열',
+  fiducial:             '피듀셜',
+  smd_array_block:      'SMD 어레이',
+  ic_chip:              'IC',
+  edge_connector_zone:  '에지 커넥터',
 }
 
 /** 결함 종류별 표시 색상 (Tailwind 클래스 호환 hex) */
@@ -99,4 +111,23 @@ export const DEFECT_COLOR: Record<string, string> = {
   TRACE_OPEN:       '#f97316',  // orange-500
   METAL_DAMAGE:     '#ef4444',  // red-500
   FIDUCIAL_MISSING: '#a855f7',  // purple-500
+  trace_open:       '#f97316',
+  metal_damage:     '#ef4444',
+  pinhole:          '#eab308',  // yellow-500
+  short:            '#dc2626',  // red-600
+  mount_hole:           '#22d3ee',  // cyan-400
+  gold_finger_row:      '#fb7185',  // rose-400
+  fiducial:             '#4ade80',  // green-400
+  smd_array_block:      '#a78bfa',  // violet-400
+  ic_chip:              '#fbbf24',  // amber-400
+  edge_connector_zone:  '#f472b6',  // pink-400
+}
+
+/** 표시용 라벨 (한글 매핑 없으면 원문 그대로) */
+export function defectDisplayName(defectType: string): string {
+  return (
+    DEFECT_LABEL[defectType] ??
+    DEFECT_LABEL[defectType.toUpperCase()] ??
+    defectType
+  )
 }

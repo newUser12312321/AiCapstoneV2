@@ -58,18 +58,28 @@ class Settings(BaseSettings):
     YOLO_CONFIDENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
 
     # Stage별 덮어쓰기 — None이면 YOLO_CONFIDENCE_THRESHOLD 사용
-    # 피듀셜은 낮게(0.25~0.4), 결함은 높게(0.5~0.65)로 나누는 것을 권장
+    # 피듀셜은 낮게(0.25~0.4) 권장
     YOLO_FIDUCIAL_CONFIDENCE_THRESHOLD: Optional[float] = Field(default=None)
-    YOLO_DEFECT_CONFIDENCE_THRESHOLD: Optional[float] = Field(default=None)
+    # Stage 2(다클래스 PCB): 0.5면 약한 클래스 누락 다수 — 0.15~0.25 권장
+    YOLO_DEFECT_CONFIDENCE_THRESHOLD: Optional[float] = Field(default=0.15)
+
+    # predict() 입력 크기 — 학습 imgsz 와 맞출 것 (1024 학습 시 640 추론이면 탐지 수 급감)
+    YOLO_PREDICT_IMGSZ: int = Field(default=1024, ge=320, le=1280)
+    # True: TTA(증강 추론) — 약한 클래스 재현율 소폭↑, 추론 시간↑
+    YOLO_PREDICT_AUGMENT: bool = Field(default=False)
 
     # 2-Stage 분리 모델 사용 여부
     # True: fiducial_best.pt + defect_best.pt 각각 사용
     # False: best.pt 단일 모델 사용
     USE_SEPARATE_MODELS: bool = Field(default=False)
 
-    # True: Stage 2 결함 추론을 피듀셜 ROI 크롭이 아니라 deskew 직후 전체 프레임에 수행
-    # (yolo predict 와 동일한 입력 범위. ROI 밖 결함 누락 방지 — 오탐은 늘 수 있음)
-    DEFECT_INFER_ON_FULL_DESKEW: bool = Field(default=False)
+    # True: Stage 2를 피듀셜 사이 좁은 ROI가 아니라 deskew 직후 **전체 프레임**에 수행.
+    # PCB 다클래스(mount_hole, gold_finger_row 등)는 ROI 밖이 대부분이라 True 권장.
+    DEFECT_INFER_ON_FULL_DESKEW: bool = Field(default=True)
+
+    # True(기본): YOLO가 1건이라도 잡으면 FAIL (단선/까짐 전용 모델).
+    # False: 정렬 성공 시 PASS — 탐지 박스는 그대로 서버·대시보드에 보냄(부품 검출·표시용).
+    FAIL_ON_ANY_YOLO_DETECTION: bool = Field(default=True)
 
     # ── FastAPI 서버 포트 ────────────────────────────────────────────────────
     EDGE_API_PORT: int = Field(default=8000)

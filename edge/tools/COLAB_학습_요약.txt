@@ -1,0 +1,19 @@
+[1] 합성 결함 데이터 생성 (로컬)
+    cd edge
+    python tools/defect_simulator.py --mode generate --input "정상이미지_폴더" --output ../synthetic_defects --count 10
+
+[2] PCB_V4 + 합성 병합
+    python tools/merge_yolo_colab_dataset.py --pcb-v4 ../PCB_V4 --synthetic ../synthetic_defects --output ../dataset_yolo_colab
+    (피듀셜 이미지가 아직 없으면: --skip-fiducial-if-missing)
+
+[3] Google Colab
+    - dataset_yolo_colab 폴더 전체를 zip으로 압축 후 Drive 업로드
+    - 압축 해제 경로에 맞게 dataset_yolo_colab/data.yaml 의 path: 를 수정
+      예: path: /content/dataset_yolo_colab
+
+[4] 학습 예시 (Ultralytics)
+    pip install ultralytics
+    yolo detect train data=/content/dataset_yolo_colab/data.yaml model=yolov8n.pt epochs=100 imgsz=640
+
+클래스 순서 (5개):
+    0 fiducial  1 trace_open  2 metal_damage  3 pinhole  4 short
