@@ -1,12 +1,12 @@
 /**
- * 검사 상세 뷰어 — 보정 전/후 이미지와 피듀셜(F1·F2) 중심 좌표만 오버레이한다.
- * 결함(YOLO 고정홀 등) 박스는 표시하지 않는다.
+ * 검사 상세 뷰어 — 보정 전/후 이미지에 피듀셜(F1·F2)과 결함 박스를 오버레이한다.
  */
 
 import { useRef, useState, useEffect, type ReactNode } from 'react'
 import { X, ImageOff, AlertCircle } from 'lucide-react'
 import { useInspectionById } from '@/hooks/useInspectionData'
 import type { InspectionLog } from '@/types/inspection'
+import { DEFECT_COLOR, defectDisplayName } from '@/types/inspection'
 
 // ── 이미지 로드 전 기본값 (로드 후 naturalWidth/Height 사용) ───────────────
 const DEFAULT_REF_WIDTH = 1920
@@ -33,7 +33,7 @@ function isFiducialAlignmentSentinel(log: InspectionLog): boolean {
   return a != null && a >= 500
 }
 
-// ── 피듀셜 마크 오버레이 (결함 YOLO 박스는 이 뷰어에서 그리지 않음) ───────────
+// ── 피듀셜/결함 오버레이 ───────────────────────────────────────────────────────
 
 function FiducialMarker({
   x,
@@ -150,6 +150,53 @@ function FiducialMarker({
   )
 }
 
+function DefectBox({
+  x,
+  y,
+  w,
+  h,
+  label,
+  confidence,
+  color,
+  scaleX,
+  scaleY,
+}: {
+  x: number
+  y: number
+  w: number
+  h: number
+  label: string
+  confidence: number
+  color: string
+  scaleX: number
+  scaleY: number
+}) {
+  const sx = x * scaleX
+  const sy = y * scaleY
+  const sw = Math.max(1, w * scaleX)
+  const sh = Math.max(1, h * scaleY)
+  const cap = `${label} ${(confidence * 100).toFixed(0)}%`
+  const tw = Math.min(220, Math.max(88, cap.length * 7.2))
+  const ty = sy > 22 ? sy - 21 : sy + 3
+
+  return (
+    <g>
+      <rect x={sx} y={sy} width={sw} height={sh} rx={2} fill="none" stroke={color} strokeWidth={2} />
+      <rect x={sx} y={ty} width={tw} height={17} rx={4} fill="rgba(15,23,42,0.86)" stroke={color} strokeWidth={1.1} />
+      <text
+        x={sx + 6}
+        y={ty + 12}
+        fill={color}
+        fontSize={11}
+        fontWeight={700}
+        fontFamily="ui-monospace, monospace"
+      >
+        {cap}
+      </text>
+    </g>
+  )
+}
+
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 
 interface DefectViewerProps {
@@ -211,6 +258,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
   const rawSrc = rawStored ? resolveImageSrc(rawStored) : null
   const showSideBySide = Boolean(rawSrc && deskewSrc)
   const f12DistancePx = log != null ? fiducialDistancePx(log) : null
+  const defects = log?.defects ?? []
 
   /* 오버레이는 보정 후 이미지 기준 */
   const imgRef = useRef<HTMLImageElement>(null)
@@ -320,7 +368,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                   )}
                 </div>
                 <div className="relative flex-1 min-w-0 bg-gray-950">
-                  <PanelBadge>보정 후 · 피듀셜</PanelBadge>
+                  <PanelBadge>보정 후 · 피듀셜 + 결함</PanelBadge>
                   {deskewSrc && !deskewLoadError ? (
                     <>
                       <img
@@ -362,6 +410,20 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                             scaleY={scaleY}
                           />
                         )}
+                        {defects.map((d, i) => (
+                          <DefectBox
+                            key={`${d.defectType}-${d.bboxX}-${d.bboxY}-${i}`}
+                            x={d.bboxX}
+                            y={d.bboxY}
+                            w={d.bboxWidth}
+                            h={d.bboxHeight}
+                            label={defectDisplayName(d.defectType)}
+                            confidence={d.confidence}
+                            color={DEFECT_COLOR[d.defectType] ?? '#f87171'}
+                            scaleX={scaleX}
+                            scaleY={scaleY}
+                          />
+                        ))}
                       </svg>
                     </>
                   ) : (
@@ -413,6 +475,20 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                       scaleY={scaleY}
                     />
                   )}
+                  {defects.map((d, i) => (
+                    <DefectBox
+                      key={`${d.defectType}-${d.bboxX}-${d.bboxY}-${i}`}
+                      x={d.bboxX}
+                      y={d.bboxY}
+                      w={d.bboxWidth}
+                      h={d.bboxHeight}
+                      label={defectDisplayName(d.defectType)}
+                      confidence={d.confidence}
+                      color={DEFECT_COLOR[d.defectType] ?? '#f87171'}
+                      scaleX={scaleX}
+                      scaleY={scaleY}
+                    />
+                  ))}
                 </svg>
               </div>
             ) : deskewSrc && deskewLoadError ? (
@@ -489,7 +565,43 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
               )}
               <MetaRow label="추론 시간"   value={log.inferenceTimeMs != null ? `${log.inferenceTimeMs}ms` : '—'} />
               <MetaRow label="총 처리"     value={log.totalTimeMs != null ? `${log.totalTimeMs}ms` : '—'} />
+              <MetaRow label="검출 수"     value={`${defects.length}건`} />
             </dl>
+
+            {defects.length > 0 && (
+              <div className="mt-4 border-t border-gray-800 pt-3">
+                <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  검출 좌표
+                </h4>
+                <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                  {defects.map((d, i) => {
+                    const cx = d.bboxX + Math.round(d.bboxWidth / 2)
+                    const cy = d.bboxY + Math.round(d.bboxHeight / 2)
+                    const color = DEFECT_COLOR[d.defectType] ?? '#f87171'
+                    return (
+                      <div
+                        key={`${d.defectType}-${d.bboxX}-${d.bboxY}-${i}`}
+                        className="rounded-md border border-gray-700/80 bg-gray-950/80 px-2.5 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-[11px] font-semibold truncate" style={{ color }}>
+                            {i + 1}. {defectDisplayName(d.defectType)}
+                          </span>
+                          <span className="text-[11px] font-mono text-gray-400">
+                            {(d.confidence * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="text-[11px] font-mono text-gray-300 leading-relaxed">
+                          <div>좌상단: ({d.bboxX}, {d.bboxY})</div>
+                          <div>크기: {d.bboxWidth}×{d.bboxHeight}px</div>
+                          <div className="text-sky-300">중심: ({cx}, {cy})</div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
           </div>
         </div>

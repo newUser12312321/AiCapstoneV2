@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 # APIRouter: main.py의 FastAPI 앱에 include_router()로 등록한다.
 router = APIRouter(prefix="/edge", tags=["Edge Device"])
 
+
+def _normalize_stage2_mode(stage2_source: Optional[str]) -> str:
+    mode = (stage2_source or settings.STAGE2_SOURCE_MODE).strip().lower()
+    if mode not in {"raw", "deskew"}:
+        raise HTTPException(status_code=400, detail="stage2Source must be 'raw' or 'deskew'")
+    return mode
+
 # ── 자동 연속 검사 상태 관리 ──────────────────────────────────────────────────
 _auto_running: bool = False       # 자동 검사 루프 실행 중 여부
 _auto_interval: float = 5.0      # 검사 간격 (초)
@@ -108,13 +115,19 @@ async def get_status() -> dict[str, Any]:
         "server": {
             "base_url": settings.SERVER_BASE_URL,
         },
+        "pipeline": {
+            "stage2_source_mode": settings.STAGE2_SOURCE_MODE,
+        },
     }
 
 
 # ── 수동 검사 트리거 ──────────────────────────────────────────────────────────
 
 @router.post("/inspect/trigger", summary="수동 검사 트리거")
-async def trigger_inspection(background_tasks: BackgroundTasks) -> dict[str, str]:
+async def trigger_inspection(
+    background_tasks: BackgroundTasks,
+    stage2Source: Optional[str] = None,
+) -> dict[str, str]:
     """
     운영자가 HTTP 요청으로 즉시 검사를 한 번 실행하도록 트리거한다.
 
@@ -124,13 +137,14 @@ async def trigger_inspection(background_tasks: BackgroundTasks) -> dict[str, str
     Returns:
         요청 수락 메시지 (실제 검사 결과는 서버 DB에서 확인)
     """
-    logger.info("[라우터] 수동 검사 트리거 요청 수신")
+    mode = _normalize_stage2_mode(stage2Source)
+    logger.info("[라우터] 수동 검사 트리거 요청 수신 (stage2=%s)", mode)
 
     # main 모듈의 파이프라인을 지연 import (순환 참조 방지)
     try:
         from main import run_inspection_pipeline
-        background_tasks.add_task(run_inspection_pipeline)
-        return {"message": "검사가 백그라운드에서 시작되었습니다."}
+        background_tasks.add_task(run_inspection_pipeline, mode)
+        return {"message": f"검사가 백그라운드에서 시작되었습니다. (stage2={mode})"}
     except ImportError:
         raise HTTPException(status_code=503, detail="검사 파이프라인을 로드할 수 없습니다.")
 
@@ -155,6 +169,7 @@ class InspectFromFileBody(BaseModel):
 async def inspect_from_uploaded_file(
     background_tasks: BackgroundTasks,
     image: UploadFile = File(..., description="검사할 이미지 파일 (.jpg/.jpeg/.png/.bmp/.webp)"),
+    stage2Source: Optional[str] = None,
 ) -> dict[str, str]:
     """
     브라우저에서 업로드한 이미지를 edge/captures 에 저장한 뒤 동일 검사 파이프라인을 실행한다.
@@ -199,9 +214,10 @@ async def inspect_from_uploaded_file(
 
     from main import run_inspection_pipeline_from_source_file
 
-    background_tasks.add_task(run_inspection_pipeline_from_source_file, save_name)
+    mode = _normalize_stage2_mode(stage2Source)
+    background_tasks.add_task(run_inspection_pipeline_from_source_file, save_name, mode)
     return {
-        "message": f"업로드 이미지 검사를 시작했습니다: {save_name}",
+        "message": f"업로드 이미지 검사를 시작했습니다: {save_name} (stage2={mode})",
     }
 
 
@@ -225,6 +241,7 @@ async def list_demo_sample_images() -> dict[str, Any]:
 async def inspect_from_file(
     body: InspectFromFileBody,
     background_tasks: BackgroundTasks,
+    stage2Source: Optional[str] = None,
 ) -> dict[str, str]:
     """
     카메라 대신 edge/captures 또는 edge/demo_samples 아래 파일로 동일 검사 파이프라인을 실행한다.
@@ -260,9 +277,10 @@ async def inspect_from_file(
 
     from main import run_inspection_pipeline_from_source_file
 
-    background_tasks.add_task(run_inspection_pipeline_from_source_file, body.path.strip())
+    mode = _normalize_stage2_mode(stage2Source)
+    background_tasks.add_task(run_inspection_pipeline_from_source_file, body.path.strip(), mode)
     return {
-        "message": f"파일 검사를 시작했습니다: {body.path.strip()}",
+        "message": f"파일 검사를 시작했습니다: {body.path.strip()} (stage2={mode})",
     }
 
 

@@ -36,20 +36,14 @@ function ResultBadge({ result }: { result: 'PASS' | 'FAIL' }) {
   )
 }
 
-/** 테이블에 표시할 결함 — 고정홀(mount_hole)은 피듀셜 뷰와 맞춰 숨김 */
-function defectsVisibleInTable(defects: InspectionLog['defects']) {
-  return defects.filter((d) => d.defectType.toLowerCase() !== 'mount_hole')
-}
-
 /** 결함 종류 태그 목록 */
 function DefectTags({ defects }: { defects: InspectionLog['defects'] }) {
-  const visible = defectsVisibleInTable(defects)
-  if (!visible.length) {
+  if (!defects.length) {
     return <span className="text-xs text-gray-600">—</span>
   }
   return (
     <div className="flex flex-wrap gap-1">
-      {visible.map((d, i) => (
+      {defects.map((d, i) => (
         <span
           key={i}
           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium"
@@ -82,7 +76,7 @@ function TableSkeleton() {
     <>
       {Array.from({ length: 8 }).map((_, i) => (
         <tr key={i} className="border-b border-gray-800 animate-pulse">
-          {Array.from({ length: 7 }).map((_, j) => (
+          {Array.from({ length: 8 }).map((_, j) => (
             <td key={j} className="px-4 py-3">
               <div className="h-3.5 bg-gray-800 rounded w-3/4" />
             </td>
@@ -124,7 +118,7 @@ export default function InspectionTable({
           {/* 헤더 */}
           <thead>
             <tr className="bg-gray-900 text-left">
-              {['ID', '시각', '디바이스', '결과', '결함', '오차 (°)', '추론 (ms)', ''].map((h) => (
+              {['ID', '시각', '디바이스', '결과', '검출 클래스', '오차 (°)', '추론 (ms)', ''].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider"

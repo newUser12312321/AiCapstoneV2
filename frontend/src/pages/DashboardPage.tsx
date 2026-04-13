@@ -20,13 +20,14 @@ import PassFailChart from '@/components/dashboard/PassFailChart'
 import TrendChart from '@/components/dashboard/TrendChart'
 import InspectionTable from '@/components/inspection/InspectionTable'
 import { deleteAllInspections } from '@/api/inspectionApi'
-import { triggerEdgeInspection, triggerInspectionFromUpload } from '@/api/edgeApi'
+import { triggerEdgeInspection, triggerInspectionFromUpload, type Stage2SourceMode } from '@/api/edgeApi'
 import { useRecentInspections } from '@/hooks/useInspectionData'
 
 export default function DashboardPage() {
   const queryClient = useQueryClient()
   const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [stage2Source, setStage2Source] = useState<Stage2SourceMode>('deskew')
 
   /* 최근 15건 — 대시보드 하단 실시간 피드 테이블 */
   const { data: recentLogs = [], isLoading } = useRecentInspections(15)
@@ -36,7 +37,7 @@ export default function DashboardPage() {
   }
 
   const triggerMutation = useMutation({
-    mutationFn: triggerEdgeInspection,
+    mutationFn: () => triggerEdgeInspection(stage2Source),
     onSuccess: (data) => {
       setActionMsg({ type: 'ok', text: data.message })
       setTimeout(() => invalidateInspections(), 2500)
@@ -59,7 +60,7 @@ export default function DashboardPage() {
   })
 
   const uploadInspectMutation = useMutation({
-    mutationFn: triggerInspectionFromUpload,
+    mutationFn: (file: File) => triggerInspectionFromUpload(file, stage2Source),
     onSuccess: (data) => {
       setActionMsg({ type: 'ok', text: data.message })
       setUploadFile(null)
@@ -94,6 +95,17 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0 min-w-[min(100%,280px)]">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-500">Stage2 입력</span>
+            <select
+              value={stage2Source}
+              onChange={(e) => setStage2Source(e.target.value as Stage2SourceMode)}
+              className="bg-gray-900 border border-gray-700 rounded-md px-2 py-1 text-gray-200"
+            >
+              <option value="deskew">deskew (보정 후)</option>
+              <option value="raw">raw (원본)</option>
+            </select>
+          </div>
           <div className="flex flex-wrap items-center gap-2 justify-end">
           <button
             type="button"

@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     # True: Stage 2를 피듀셜 사이 좁은 ROI가 아니라 deskew 직후 **전체 프레임**에 수행.
     # PCB 다클래스(mount_hole, gold_finger_row 등)는 ROI 밖이 대부분이라 True 권장.
     DEFECT_INFER_ON_FULL_DESKEW: bool = Field(default=True)
+    # Stage 2 입력 소스:
+    # - "deskew": Stage1 보정 후 이미지 기준(기존 동작)
+    # - "raw": Stage1 보정 전 원본 이미지 기준
+    STAGE2_SOURCE_MODE: str = Field(default="deskew")
 
     # True(기본): YOLO가 1건이라도 잡으면 FAIL (단선/까짐 전용 모델).
     # False: 정렬 성공 시 PASS — 탐지 박스는 그대로 서버·대시보드에 보냄(부품 검출·표시용).
@@ -127,6 +131,14 @@ class Settings(BaseSettings):
         if self.YOLO_DEFECT_CONFIDENCE_THRESHOLD is not None:
             return float(self.YOLO_DEFECT_CONFIDENCE_THRESHOLD)
         return float(self.YOLO_CONFIDENCE_THRESHOLD)
+
+    @field_validator("STAGE2_SOURCE_MODE")
+    @classmethod
+    def _validate_stage2_source_mode(cls, v: str) -> str:
+        mode = (v or "").strip().lower()
+        if mode not in {"raw", "deskew"}:
+            raise ValueError("STAGE2_SOURCE_MODE must be 'raw' or 'deskew'")
+        return mode
 
     # pydantic-settings 설정:
     # .env 파일을 자동으로 찾아 읽고, 대소문자를 구분하지 않는다.

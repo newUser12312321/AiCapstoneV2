@@ -190,7 +190,7 @@ app.mount("/demo_samples", StaticFiles(directory=str(DEMO_SAMPLES_DIR)), name="d
 
 # ── 2-Stage 비전 검사 파이프라인 ──────────────────────────────────────────────
 
-async def run_inspection_pipeline() -> Optional[InspectionPacket]:
+async def run_inspection_pipeline(stage2_source_mode: Optional[str] = None) -> Optional[InspectionPacket]:
     """
     PCB 검사 전체 파이프라인을 실행한다.
 
@@ -236,8 +236,13 @@ async def run_inspection_pipeline() -> Optional[InspectionPacket]:
         frame, image_path = camera.capture_and_save()
 
         debug_imshow = settings.ENVIRONMENT == "development"
+        mode = (stage2_source_mode or settings.STAGE2_SOURCE_MODE).strip().lower()
         return _run_production_vision_pipeline(
-            frame, image_path, pipeline_start, debug_imshow=debug_imshow
+            frame,
+            image_path,
+            pipeline_start,
+            stage2_source_mode=mode,
+            debug_imshow=debug_imshow,
         )
 
     except Exception as e:
@@ -252,6 +257,7 @@ def _run_production_vision_pipeline(
     image_path: str,
     pipeline_start: float,
     *,
+    stage2_source_mode: str = "deskew",
     debug_imshow: bool = False,
 ) -> Optional[InspectionPacket]:
     """카메라/파일 공통 — Stage 1·2 및 전송."""
@@ -296,6 +302,17 @@ def _run_production_vision_pipeline(
             _finalize(packet)
             return packet
 
+        raw_frame = frame.copy()
+        stage2_mode = (stage2_source_mode or "deskew").strip().lower()
+        if stage2_mode not in {"raw", "deskew"}:
+            logger.warning("[파이프라인] 알 수 없는 Stage2 모드 '%s' → deskew로 대체", stage2_mode)
+            stage2_mode = "deskew"
+
+        # Stage2 raw 모드에서 대시보드 오버레이가 원본 좌표계를 유지하도록
+        # deskew 전 피듀셜 중심을 보존한다.
+        pre_deskew_f1x, pre_deskew_f1y = f1x, f1y
+        pre_deskew_f2x, pre_deskew_f2y = f2x, f2y
+
         logger.info("[파이프라인] STEP 2-A′ — 기울기 보정 (deskew)")
         frame, alignment = deskew_image_by_fiducial_angle(frame, alignment)
 
@@ -304,22 +321,34 @@ def _run_production_vision_pipeline(
         cv2.imwrite(deskew_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
         logger.info("[파이프라인] 보정 후 이미지 저장: %s", deskew_path)
 
-        if alignment.fiducial1:
-            f1x, f1y = alignment.fiducial1.center_x, alignment.fiducial1.center_y
-        if alignment.fiducial2:
-            f2x, f2y = alignment.fiducial2.center_x, alignment.fiducial2.center_y
+        if stage2_mode == "deskew":
+            if alignment.fiducial1:
+                f1x, f1y = alignment.fiducial1.center_x, alignment.fiducial1.center_y
+            if alignment.fiducial2:
+                f2x, f2y = alignment.fiducial2.center_x, alignment.fiducial2.center_y
+        else:
+            f1x, f1y = pre_deskew_f1x, pre_deskew_f1y
+            f2x, f2y = pre_deskew_f2x, pre_deskew_f2y
 
-        logger.info("[파이프라인] STEP 2-B — 결함 탐지 (ROI)")
+        logger.info("[파이프라인] STEP 2-B — 결함 탐지 (입력=%s)", stage2_mode)
+        stage2_source_image = raw_frame if stage2_mode == "raw" else frame
         if settings.DEFECT_INFER_ON_FULL_DESKEW:
-            roi = frame
+            roi = stage2_source_image
             roi_x, roi_y = 0, 0
             logger.info(
-                "[파이프라인] 결함 입력: deskew 전체 이미지 (%dx%d) — DEFECT_INFER_ON_FULL_DESKEW",
-                frame.shape[1],
-                frame.shape[0],
+                "[파이프라인] 결함 입력: %s 전체 이미지 (%dx%d) — DEFECT_INFER_ON_FULL_DESKEW",
+                stage2_mode,
+                stage2_source_image.shape[1],
+                stage2_source_image.shape[0],
             )
         else:
-            roi, roi_x, roi_y = crop_inspection_roi_with_offset(frame, alignment)
+            # 기존 ROI 크롭은 deskew 좌표계 기준이므로 raw 모드에서는 혼동 방지를 위해 full-frame만 허용.
+            if stage2_mode == "raw":
+                roi = stage2_source_image
+                roi_x, roi_y = 0, 0
+                logger.warning("[파이프라인] raw 모드에서는 ROI 대신 전체 프레임으로 Stage2 수행")
+            else:
+                roi, roi_x, roi_y = crop_inspection_roi_with_offset(stage2_source_image, alignment)
         stage2 = defect_detector if settings.USE_SEPARATE_MODELS else detector
         defect_items, defect_ms = stage2.detect_defects(roi)
 
@@ -351,7 +380,7 @@ def _run_production_vision_pipeline(
             angle_error=measured_skew_deg,
             inference_ms=fiducial_ms + defect_ms,
             defects=defect_payloads,
-            image_path=deskew_path,
+            image_path=image_path if stage2_mode == "raw" else deskew_path,
             pipeline_start=pipeline_start,
         )
 
@@ -365,7 +394,10 @@ def _run_production_vision_pipeline(
         return None
 
 
-async def run_inspection_pipeline_from_source_file(relative_path: str) -> Optional[InspectionPacket]:
+async def run_inspection_pipeline_from_source_file(
+    relative_path: str,
+    stage2_source_mode: Optional[str] = None,
+) -> Optional[InspectionPacket]:
     """
     edge/captures 또는 edge/demo_samples 아래 저장된 이미지로 동일 파이프라인 실행.
     카메라 없이 시연·합성 데이터 검증에 사용한다.
@@ -397,8 +429,13 @@ async def run_inspection_pipeline_from_source_file(relative_path: str) -> Option
     if gpio:
         gpio.signal_processing()
 
+    mode = (stage2_source_mode or settings.STAGE2_SOURCE_MODE).strip().lower()
     return _run_production_vision_pipeline(
-        frame, image_path, pipeline_start, debug_imshow=False
+        frame,
+        image_path,
+        pipeline_start,
+        stage2_source_mode=mode,
+        debug_imshow=False,
     )
 
 
