@@ -121,14 +121,6 @@ class InspectionPacket(BaseModel):
     # 탐지된 결함 목록
     defects: list[DefectPayload] = Field(default_factory=list)
 
-    # 실크 OCR (SILKSCREEN_OCR_ENABLED 시에만 채워짐)
-    silkscreen_ocr_raw: Optional[str] = Field(default=None, serialization_alias="silkscreenOcrRaw")
-    silkscreen_ocr_matched: Optional[bool] = Field(default=None, serialization_alias="silkscreenOcrMatched")
-    silkscreen_ocr_skipped_reason: Optional[str] = Field(
-        default=None, serialization_alias="silkscreenOcrSkippedReason"
-    )
-    silkscreen_ocr_ms: Optional[int] = Field(default=None, serialization_alias="silkscreenOcrMs")
-
     model_config = {"populate_by_name": True}
 
     def to_server_json(self) -> dict:

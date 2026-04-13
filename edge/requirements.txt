@@ -26,6 +26,3 @@ httpx==0.27.0
 python-dotenv==1.0.1
 numpy==1.26.4
 Pillow==10.3.0
-
-# 실크 OCR (선택) — OS에 tesseract 바이너리 필요
-pytesseract==0.3.13

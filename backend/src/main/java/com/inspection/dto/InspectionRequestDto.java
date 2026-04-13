@@ -69,18 +69,6 @@ public class InspectionRequestDto {
     /** 캡처 이미지 저장 경로 */
     private String imagePath;
 
-    /** 실크 OCR 인식 문자 (선택) */
-    private String silkscreenOcrRaw;
-
-    /** 실크 정규식 매칭 여부 (선택) */
-    private Boolean silkscreenOcrMatched;
-
-    /** 실크 OCR 생략·오류 사유 (선택) */
-    private String silkscreenOcrSkippedReason;
-
-    /** 실크 OCR 소요 시간 (ms, 선택) */
-    private Integer silkscreenOcrMs;
-
     /**
      * 검사 수행 시각 (라즈베리파이 로컬 시각)
      * ISO 8601 형식: "2026-03-31T14:30:00"

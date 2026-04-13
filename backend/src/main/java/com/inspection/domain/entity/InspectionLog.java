@@ -111,22 +111,6 @@ public class InspectionLog {
     @Column(name = "image_path", length = 512)
     private String imagePath;
 
-    /** 실크 OCR 인식 문자 (선택) */
-    @Column(name = "silkscreen_ocr_raw", columnDefinition = "TEXT")
-    private String silkscreenOcrRaw;
-
-    /** 실크 정규식 매칭 여부 */
-    @Column(name = "silkscreen_ocr_matched")
-    private Boolean silkscreenOcrMatched;
-
-    /** 실크 OCR 생략·오류 사유 */
-    @Column(name = "silkscreen_ocr_skipped_reason", length = 512)
-    private String silkscreenOcrSkippedReason;
-
-    /** 실크 OCR 소요 시간 (ms) */
-    @Column(name = "silkscreen_ocr_ms")
-    private Integer silkscreenOcrMs;
-
     // ── 타임스탬프 ──────────────────────────────────────────────────────────
 
     /**

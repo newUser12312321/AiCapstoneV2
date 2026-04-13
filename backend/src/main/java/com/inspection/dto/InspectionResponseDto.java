@@ -52,11 +52,6 @@ public class InspectionResponseDto {
     /** 캡처 이미지 경로 */
     private String imagePath;
 
-    private String silkscreenOcrRaw;
-    private Boolean silkscreenOcrMatched;
-    private String silkscreenOcrSkippedReason;
-    private Integer silkscreenOcrMs;
-
     /** 검사 수행 시각 */
     private LocalDateTime inspectedAt;
 
@@ -97,10 +92,6 @@ public class InspectionResponseDto {
                 .inferenceTimeMs(log.getInferenceTimeMs())
                 .totalTimeMs(log.getTotalTimeMs())
                 .imagePath(log.getImagePath())
-                .silkscreenOcrRaw(log.getSilkscreenOcrRaw())
-                .silkscreenOcrMatched(log.getSilkscreenOcrMatched())
-                .silkscreenOcrSkippedReason(log.getSilkscreenOcrSkippedReason())
-                .silkscreenOcrMs(log.getSilkscreenOcrMs())
                 .inspectedAt(log.getInspectedAt())
                 .createdAt(log.getCreatedAt())
                 .defects(defectDtos)
