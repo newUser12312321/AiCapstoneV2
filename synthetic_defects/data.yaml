@@ -1,0 +1,7 @@
+# YOLOv8 Dataset Config
+path: c:\Projects\AiCapstoneV2\synthetic_defects
+train: images
+val: images   # 실제 사용 시 train/val 분리 권장
+
+nc: 4
+names: ['trace_open', 'metal_damage', 'pinhole', 'short']

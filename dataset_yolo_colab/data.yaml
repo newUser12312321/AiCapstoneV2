@@ -1,0 +1,9 @@
+# Ultralytics YOLO — PCB 피듀셜 + 합성 결함 통합
+# Colab: 압축 해제 후 path 를 /content/dataset_yolo_colab 등으로 바꾸세요.
+
+path: C:/Projects/AiCapstoneV2/dataset_yolo_colab
+train: images/train
+val: images/val
+
+nc: 5
+names: ['fiducial', 'trace_open', 'metal_damage', 'pinhole', 'short']
