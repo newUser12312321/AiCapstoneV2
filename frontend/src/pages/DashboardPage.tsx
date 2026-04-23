@@ -33,10 +33,12 @@ export default function DashboardPage() {
   /* 최근 15건 — 대시보드 하단 실시간 피드 테이블 */
   const { data: recentLogs = [], isLoading } = useRecentInspections(15)
 
+  const PREVIEW_REFRESH_MS = 250
+
   useEffect(() => {
     const timer = window.setInterval(() => {
       setPreviewTick(Date.now())
-    }, 1000)
+    }, PREVIEW_REFRESH_MS)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -203,7 +205,7 @@ export default function DashboardPage() {
       <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-3">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-semibold text-gray-300">실시간 웹캠 프리뷰</h3>
-          <span className="text-[11px] text-gray-500">1초 주기 자동 갱신</span>
+          <span className="text-[11px] text-gray-500">{PREVIEW_REFRESH_MS}ms 주기 자동 갱신</span>
         </div>
         <div className="w-full aspect-video rounded-lg overflow-hidden bg-black/70 border border-gray-800">
           <img

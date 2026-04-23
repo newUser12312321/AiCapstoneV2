@@ -138,7 +138,7 @@ async def camera_preview_frame() -> Response:
             raise HTTPException(status_code=503, detail="카메라가 초기화되지 않았습니다.")
 
         frame = cam.capture()
-        ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+        ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
         if not ok:
             raise HTTPException(status_code=500, detail="카메라 프레임 인코딩 실패")
 

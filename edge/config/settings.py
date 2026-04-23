@@ -85,6 +85,22 @@ class Settings(BaseSettings):
     # False: 정렬 성공 시 PASS — 탐지 박스는 그대로 서버·대시보드에 보냄(부품 검출·표시용).
     FAIL_ON_ANY_YOLO_DETECTION: bool = Field(default=True)
 
+    # ── OCR 설정 (PCB 모델명 인식) ───────────────────────────────────────────
+    OCR_ENABLED: bool = Field(default=True)
+    # 예: "G-SERIES". 비워두면 OCR 결과는 로그만 남기고 판정에는 미반영.
+    OCR_EXPECTED_MODEL_NAME: Optional[str] = Field(default=None)
+    # True: 기대 모델명 미검출 시 FAIL 처리.
+    OCR_FAIL_ON_MISMATCH: bool = Field(default=True)
+    # OCR ROI (픽셀). 미설정 시 전체 프레임 대상으로 OCR.
+    OCR_ROI_X: Optional[int] = Field(default=None, ge=0)
+    OCR_ROI_Y: Optional[int] = Field(default=None, ge=0)
+    OCR_ROI_WIDTH: Optional[int] = Field(default=None, gt=0)
+    OCR_ROI_HEIGHT: Optional[int] = Field(default=None, gt=0)
+    # Tesseract 옵션
+    OCR_LANG: str = Field(default="eng")
+    OCR_PSM: int = Field(default=6, ge=3, le=13)
+    OCR_CHAR_WHITELIST: str = Field(default="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._/")
+
     # ── FastAPI 서버 포트 ────────────────────────────────────────────────────
     EDGE_API_PORT: int = Field(default=8000)
 

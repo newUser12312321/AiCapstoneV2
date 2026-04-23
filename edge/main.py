@@ -51,6 +51,7 @@ from inference.alignment import (
     crop_inspection_roi_with_offset,
     deskew_image_by_fiducial_angle,
 )
+from inference.ocr_reader import read_model_name
 from inference.yolo_detector import YoloDetector
 from models.schemas import (
     AlignmentResult,
@@ -371,6 +372,34 @@ def _run_production_vision_pipeline(
             )
             for d in defect_items
         ]
+
+        # STEP 2-C: OCR 모델명 인식 (옵션)
+        ocr_result = read_model_name(frame)
+        if ocr_result is not None:
+            logger.info(
+                "[파이프라인] OCR 결과: raw='%s' normalized='%s' expected='%s' match=%s (%dms)",
+                ocr_result.text,
+                ocr_result.normalized_text,
+                ocr_result.expected_text or "",
+                ocr_result.is_match,
+                ocr_result.elapsed_ms,
+            )
+            if (
+                settings.OCR_FAIL_ON_MISMATCH
+                and ocr_result.expected_text
+                and ocr_result.is_match is False
+            ):
+                final_result = InspectionResult.FAIL
+                defect_payloads.append(
+                    DefectPayload(
+                        defect_type="OCR_MODEL_MISMATCH",
+                        confidence=1.0,
+                        bbox_x=ocr_result.roi_x,
+                        bbox_y=ocr_result.roi_y,
+                        bbox_width=ocr_result.roi_w,
+                        bbox_height=ocr_result.roi_h,
+                    )
+                )
 
         f1c, f2c = _fiducial_confidences(alignment)
         packet = _build_packet(
