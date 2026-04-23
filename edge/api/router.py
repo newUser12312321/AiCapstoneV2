@@ -12,6 +12,7 @@ import asyncio
 import logging
 import re
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -19,6 +20,7 @@ from typing import Any, Optional
 import cv2
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.sender import create_dummy_packet, ServerSender
@@ -171,6 +173,57 @@ async def camera_preview_frame() -> Response:
                 },
             )
         raise HTTPException(status_code=500, detail=f"카메라 프리뷰 실패: {e}") from e
+
+
+@router.get("/camera/stream.mjpg", summary="카메라 MJPEG 스트리밍")
+async def camera_preview_stream() -> StreamingResponse:
+    """
+    대시보드용 실시간 카메라 스트리밍.
+    브라우저 <img> 태그에서 multipart/x-mixed-replace(MJPEG)로 재생한다.
+    """
+    try:
+        import main as main_mod
+        cam = getattr(main_mod, "camera", None)
+        if cam is None:
+            raise HTTPException(status_code=503, detail="카메라가 초기화되지 않았습니다.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"카메라 스트림 초기화 실패: {e}") from e
+
+    boundary = b"frame"
+
+    def _gen():
+        global _last_preview_jpeg
+        while True:
+            try:
+                with _preview_lock:
+                    frame = cam.capture()
+                    ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+                    if ok:
+                        _last_preview_jpeg = encoded.tobytes()
+            except Exception as e:
+                logger.debug("[프리뷰 스트림] 캡처 실패: %s", e)
+
+            if _last_preview_jpeg is None:
+                time.sleep(0.05)
+                continue
+
+            chunk = (
+                b"--" + boundary + b"\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                b"Cache-Control: no-store\r\n\r\n" +
+                _last_preview_jpeg +
+                b"\r\n"
+            )
+            yield chunk
+            time.sleep(0.10)  # 약 10fps
+
+    return StreamingResponse(
+        _gen(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 # ── 수동 검사 트리거 ──────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
  * └──────────────────────────────────────────────────┘
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Camera, FolderOpen, Loader2, Trash2 } from 'lucide-react'
 import StatCardGroup from '@/components/dashboard/StatCard'
@@ -28,24 +28,10 @@ export default function DashboardPage() {
   const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [stage2Source, setStage2Source] = useState<Stage2SourceMode>('deskew')
-  const [previewTick, setPreviewTick] = useState<number>(Date.now())
 
   /* 최근 15건 — 대시보드 하단 실시간 피드 테이블 */
   const { data: recentLogs = [], isLoading } = useRecentInspections(15)
-
-  const PREVIEW_REFRESH_MS = 500
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setPreviewTick(Date.now())
-    }, PREVIEW_REFRESH_MS)
-    return () => window.clearInterval(timer)
-  }, [])
-
-  const livePreviewSrc = useMemo(
-    () => `/edge/camera/preview.jpg?t=${previewTick}`,
-    [previewTick]
-  )
+  const livePreviewSrc = '/edge/camera/stream.mjpg'
 
   const invalidateInspections = () => {
     queryClient.invalidateQueries({ queryKey: ['inspections'] })
@@ -205,7 +191,7 @@ export default function DashboardPage() {
       <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-3">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-semibold text-gray-300">실시간 웹캠 프리뷰</h3>
-          <span className="text-[11px] text-gray-500">{PREVIEW_REFRESH_MS}ms 주기 자동 갱신</span>
+          <span className="text-[11px] text-gray-500">MJPEG 실시간 스트림</span>
         </div>
         <div className="w-full aspect-video rounded-lg overflow-hidden bg-black/70 border border-gray-800">
           <img
