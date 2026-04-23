@@ -5,7 +5,7 @@
 /**
  * 수동 PCB 검사 1회 실행 (백그라운드). 결과는 Spring Boot DB에 적재된다.
  */
-export type Stage2SourceMode = 'deskew' | 'raw'
+export type Stage2SourceMode = 'aligned' | 'raw'
 
 export async function triggerEdgeInspection(
   stage2Source: Stage2SourceMode

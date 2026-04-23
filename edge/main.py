@@ -47,9 +47,9 @@ from capture.camera import CameraCapture
 from config.settings import settings
 from hardware.gpio_controller import GpioController
 from inference.alignment import (
+    align_image_to_reference_by_fiducials,
     compute_alignment,
     crop_inspection_roi_with_offset,
-    deskew_image_by_fiducial_angle,
 )
 from inference.ocr_reader import read_model_name
 from inference.yolo_detector import YoloDetector
@@ -258,7 +258,7 @@ def _run_production_vision_pipeline(
     image_path: str,
     pipeline_start: float,
     *,
-    stage2_source_mode: str = "deskew",
+    stage2_source_mode: str = "aligned",
     debug_imshow: bool = False,
 ) -> Optional[InspectionPacket]:
     """카메라/파일 공통 — Stage 1·2 및 전송."""
@@ -304,32 +304,42 @@ def _run_production_vision_pipeline(
             return packet
 
         raw_frame = frame.copy()
-        stage2_mode = (stage2_source_mode or "deskew").strip().lower()
-        if stage2_mode not in {"raw", "deskew"}:
-            logger.warning("[파이프라인] 알 수 없는 Stage2 모드 '%s' → deskew로 대체", stage2_mode)
-            stage2_mode = "deskew"
+        stage2_mode = (stage2_source_mode or "aligned").strip().lower()
+        if stage2_mode == "deskew":
+            # 하위 호환: 기존 deskew 모드는 aligned로 통일 처리
+            stage2_mode = "aligned"
+        if stage2_mode not in {"raw", "aligned"}:
+            logger.warning("[파이프라인] 알 수 없는 Stage2 모드 '%s' → aligned로 대체", stage2_mode)
+            stage2_mode = "aligned"
 
         # Stage2 raw 모드에서 대시보드 오버레이가 원본 좌표계를 유지하도록
-        # deskew 전 피듀셜 중심을 보존한다.
-        pre_deskew_f1x, pre_deskew_f1y = f1x, f1y
-        pre_deskew_f2x, pre_deskew_f2y = f2x, f2y
+        # 정합 전 피듀셜 중심을 보존한다.
+        pre_align_f1x, pre_align_f1y = f1x, f1y
+        pre_align_f2x, pre_align_f2y = f2x, f2y
 
-        logger.info("[파이프라인] STEP 2-A′ — 기울기 보정 (deskew)")
-        frame, alignment = deskew_image_by_fiducial_angle(frame, alignment)
+        logger.info("[파이프라인] STEP 2-A′ — 좌표 정합 (translation/rotation/scale)")
+        aligned_frame, alignment, _m = align_image_to_reference_by_fiducials(
+            frame,
+            alignment,
+            ref_f1=(settings.ALIGN_REF_FIDUCIAL1_X, settings.ALIGN_REF_FIDUCIAL1_Y),
+            ref_f2=(settings.ALIGN_REF_FIDUCIAL2_X, settings.ALIGN_REF_FIDUCIAL2_Y),
+            out_size=(settings.ALIGN_OUTPUT_WIDTH, settings.ALIGN_OUTPUT_HEIGHT),
+        )
+        frame = aligned_frame
 
         orig_p = Path(image_path)
-        deskew_path = str(orig_p.parent / f"{orig_p.stem}_deskew{orig_p.suffix}")
-        cv2.imwrite(deskew_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        logger.info("[파이프라인] 보정 후 이미지 저장: %s", deskew_path)
+        aligned_path = str(orig_p.parent / f"{orig_p.stem}_aligned{orig_p.suffix}")
+        cv2.imwrite(aligned_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        logger.info("[파이프라인] 정합 후 이미지 저장: %s", aligned_path)
 
-        if stage2_mode == "deskew":
+        if stage2_mode == "aligned":
             if alignment.fiducial1:
                 f1x, f1y = alignment.fiducial1.center_x, alignment.fiducial1.center_y
             if alignment.fiducial2:
                 f2x, f2y = alignment.fiducial2.center_x, alignment.fiducial2.center_y
         else:
-            f1x, f1y = pre_deskew_f1x, pre_deskew_f1y
-            f2x, f2y = pre_deskew_f2x, pre_deskew_f2y
+            f1x, f1y = pre_align_f1x, pre_align_f1y
+            f2x, f2y = pre_align_f2x, pre_align_f2y
 
         logger.info("[파이프라인] STEP 2-B — 결함 탐지 (입력=%s)", stage2_mode)
         stage2_source_image = raw_frame if stage2_mode == "raw" else frame
@@ -343,7 +353,7 @@ def _run_production_vision_pipeline(
                 stage2_source_image.shape[0],
             )
         else:
-            # 기존 ROI 크롭은 deskew 좌표계 기준이므로 raw 모드에서는 혼동 방지를 위해 full-frame만 허용.
+            # ROI 크롭은 aligned 좌표계 기준이므로 raw 모드에서는 혼동 방지를 위해 full-frame만 허용.
             if stage2_mode == "raw":
                 roi = stage2_source_image
                 roi_x, roi_y = 0, 0
@@ -409,7 +419,7 @@ def _run_production_vision_pipeline(
             angle_error=measured_skew_deg,
             inference_ms=fiducial_ms + defect_ms,
             defects=defect_payloads,
-            image_path=image_path if stage2_mode == "raw" else deskew_path,
+            image_path=image_path if stage2_mode == "raw" else aligned_path,
             pipeline_start=pipeline_start,
         )
 

@@ -27,7 +27,7 @@ export default function DashboardPage() {
   const queryClient = useQueryClient()
   const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [stage2Source, setStage2Source] = useState<Stage2SourceMode>('deskew')
+  const [stage2Source, setStage2Source] = useState<Stage2SourceMode>('aligned')
 
   /* 최근 15건 — 대시보드 하단 실시간 피드 테이블 */
   const { data: recentLogs = [], isLoading } = useRecentInspections(15)
@@ -103,7 +103,7 @@ export default function DashboardPage() {
               onChange={(e) => setStage2Source(e.target.value as Stage2SourceMode)}
               className="bg-gray-900 border border-gray-700 rounded-md px-2 py-1 text-gray-200"
             >
-              <option value="deskew">deskew (보정 후)</option>
+              <option value="aligned">aligned (좌표 정합 후)</option>
               <option value="raw">raw (원본)</option>
             </select>
           </div>

@@ -73,13 +73,24 @@ class Settings(BaseSettings):
     # False: best.pt 단일 모델 사용
     USE_SEPARATE_MODELS: bool = Field(default=False)
 
-    # True: Stage 2를 피듀셜 사이 좁은 ROI가 아니라 deskew 직후 **전체 프레임**에 수행.
+    # True: Stage 2를 피듀셜 사이 좁은 ROI가 아니라 정합(또는 raw) **전체 프레임**에 수행.
     # PCB 다클래스(mount_hole, gold_finger_row 등)는 ROI 밖이 대부분이라 True 권장.
     DEFECT_INFER_ON_FULL_DESKEW: bool = Field(default=True)
     # Stage 2 입력 소스:
-    # - "deskew": Stage1 보정 후 이미지 기준(기존 동작)
+    # - "aligned": Stage1 좌표 정합 후 이미지 기준(권장)
+    # - "deskew": 하위 호환 alias (내부적으로 aligned와 동일 처리)
     # - "raw": Stage1 보정 전 원본 이미지 기준
-    STAGE2_SOURCE_MODE: str = Field(default="deskew")
+    STAGE2_SOURCE_MODE: str = Field(default="aligned")
+
+    # ── 좌표 정합(Similarity: translation/rotation/scale) ────────────────────
+    # 정합 기준 피듀셜 좌표 (정합 결과 이미지 좌표계)
+    ALIGN_REF_FIDUCIAL1_X: int = Field(default=278, ge=0)
+    ALIGN_REF_FIDUCIAL1_Y: int = Field(default=908, ge=0)
+    ALIGN_REF_FIDUCIAL2_X: int = Field(default=1528, ge=0)
+    ALIGN_REF_FIDUCIAL2_Y: int = Field(default=202, ge=0)
+    # 정합 출력 캔버스 크기
+    ALIGN_OUTPUT_WIDTH: int = Field(default=1920, ge=320, le=4096)
+    ALIGN_OUTPUT_HEIGHT: int = Field(default=1080, ge=240, le=4096)
 
     # True(기본): YOLO가 1건이라도 잡으면 FAIL (단선/까짐 전용 모델).
     # False: 정렬 성공 시 PASS — 탐지 박스는 그대로 서버·대시보드에 보냄(부품 검출·표시용).
@@ -152,8 +163,10 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_stage2_source_mode(cls, v: str) -> str:
         mode = (v or "").strip().lower()
-        if mode not in {"raw", "deskew"}:
-            raise ValueError("STAGE2_SOURCE_MODE must be 'raw' or 'deskew'")
+        if mode not in {"raw", "deskew", "aligned"}:
+            raise ValueError("STAGE2_SOURCE_MODE must be 'raw', 'deskew', or 'aligned'")
+        if mode == "deskew":
+            return "aligned"
         return mode
 
     # pydantic-settings 설정:

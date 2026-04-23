@@ -37,8 +37,10 @@ _last_preview_jpeg: Optional[bytes] = None
 
 def _normalize_stage2_mode(stage2_source: Optional[str]) -> str:
     mode = (stage2_source or settings.STAGE2_SOURCE_MODE).strip().lower()
-    if mode not in {"raw", "deskew"}:
-        raise HTTPException(status_code=400, detail="stage2Source must be 'raw' or 'deskew'")
+    if mode == "deskew":
+        mode = "aligned"
+    if mode not in {"raw", "aligned"}:
+        raise HTTPException(status_code=400, detail="stage2Source must be 'raw' or 'aligned'")
     return mode
 
 # ── 자동 연속 검사 상태 관리 ──────────────────────────────────────────────────
