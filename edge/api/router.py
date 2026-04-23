@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 import cv2
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from api.sender import create_dummy_packet, ServerSender
@@ -117,8 +117,40 @@ async def get_status() -> dict[str, Any]:
         },
         "pipeline": {
             "stage2_source_mode": settings.STAGE2_SOURCE_MODE,
+            "ocr_enabled": settings.OCR_ENABLED,
+            "ocr_expected_model_name": settings.OCR_EXPECTED_MODEL_NAME,
+            "ocr_fail_on_mismatch": settings.OCR_FAIL_ON_MISMATCH,
         },
     }
+
+
+@router.get("/camera/preview.jpg", summary="카메라 프리뷰 단일 프레임(JPEG)")
+async def camera_preview_frame() -> Response:
+    """
+    라즈베리파이 카메라 현재 프레임을 JPEG로 반환한다.
+    프론트 대시보드에서 주기적으로 호출해 실시간 미리보기를 구성할 때 사용한다.
+    """
+    try:
+        import main as main_mod
+
+        cam = getattr(main_mod, "camera", None)
+        if cam is None:
+            raise HTTPException(status_code=503, detail="카메라가 초기화되지 않았습니다.")
+
+        frame = cam.capture()
+        ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+        if not ok:
+            raise HTTPException(status_code=500, detail="카메라 프레임 인코딩 실패")
+
+        return Response(
+            content=encoded.tobytes(),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"카메라 프리뷰 실패: {e}") from e
 
 
 # ── 수동 검사 트리거 ──────────────────────────────────────────────────────────

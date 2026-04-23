@@ -12,7 +12,7 @@
  * └──────────────────────────────────────────────────┘
  */
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Camera, FolderOpen, Loader2, Trash2 } from 'lucide-react'
 import StatCardGroup from '@/components/dashboard/StatCard'
@@ -28,9 +28,22 @@ export default function DashboardPage() {
   const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [stage2Source, setStage2Source] = useState<Stage2SourceMode>('deskew')
+  const [previewTick, setPreviewTick] = useState<number>(Date.now())
 
   /* 최근 15건 — 대시보드 하단 실시간 피드 테이블 */
   const { data: recentLogs = [], isLoading } = useRecentInspections(15)
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setPreviewTick(Date.now())
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const livePreviewSrc = useMemo(
+    () => `/edge/camera/preview.jpg?t=${previewTick}`,
+    [previewTick]
+  )
 
   const invalidateInspections = () => {
     queryClient.invalidateQueries({ queryKey: ['inspections'] })
@@ -185,6 +198,24 @@ export default function DashboardPage() {
           {actionMsg.text}
         </p>
       )}
+
+      {/* 실시간 카메라 프리뷰 */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-gray-300">실시간 웹캠 프리뷰</h3>
+          <span className="text-[11px] text-gray-500">1초 주기 자동 갱신</span>
+        </div>
+        <div className="w-full aspect-video rounded-lg overflow-hidden bg-black/70 border border-gray-800">
+          <img
+            src={livePreviewSrc}
+            alt="라즈베리파이 카메라 실시간 프리뷰"
+            className="w-full h-full object-contain"
+            onError={() => {
+              // 네트워크 끊김/엣지 미가동 시 다음 tick 에 자동 재시도
+            }}
+          />
+        </div>
+      </div>
 
       {/* 1행: 통계 카드 4개 */}
       <StatCardGroup />
