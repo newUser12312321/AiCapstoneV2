@@ -98,15 +98,17 @@ class Settings(BaseSettings):
 
     # ── OCR 설정 (PCB 모델명 인식) ───────────────────────────────────────────
     OCR_ENABLED: bool = Field(default=True)
-    # 예: "G-SERIES". 비워두면 OCR 결과는 로그만 남기고 판정에는 미반영.
-    OCR_EXPECTED_MODEL_NAME: Optional[str] = Field(default=None)
+    # 예: "C-SERIES". 비워두면 OCR 결과는 로그만 남기고 판정에는 미반영.
+    OCR_EXPECTED_MODEL_NAME: Optional[str] = Field(default="C-SERIES")
     # True: 기대 모델명 미검출 시 FAIL 처리.
     OCR_FAIL_ON_MISMATCH: bool = Field(default=True)
-    # OCR ROI (픽셀). 미설정 시 전체 프레임 대상으로 OCR.
-    OCR_ROI_X: Optional[int] = Field(default=None, ge=0)
-    OCR_ROI_Y: Optional[int] = Field(default=None, ge=0)
-    OCR_ROI_WIDTH: Optional[int] = Field(default=None, gt=0)
-    OCR_ROI_HEIGHT: Optional[int] = Field(default=None, gt=0)
+    # OCR ROI (픽셀). 기본값은 aligned 1920x1080 기준 C-SERIES 세로 텍스트 영역.
+    OCR_ROI_X: Optional[int] = Field(default=120, ge=0)
+    OCR_ROI_Y: Optional[int] = Field(default=170, ge=0)
+    OCR_ROI_WIDTH: Optional[int] = Field(default=180, gt=0)
+    OCR_ROI_HEIGHT: Optional[int] = Field(default=690, gt=0)
+    # 세로 라벨(ROI 높이 > 너비)일 때 OCR 전에 90도 회전 후보를 함께 평가.
+    OCR_AUTO_ROTATE_VERTICAL: bool = Field(default=True)
     # Tesseract 옵션
     OCR_LANG: str = Field(default="eng")
     OCR_PSM: int = Field(default=6, ge=3, le=13)

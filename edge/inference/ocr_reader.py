@@ -40,6 +40,12 @@ def _normalize_text(value: str) -> str:
     return compact.upper().strip()
 
 
+def _normalize_text_alnum(value: str) -> str:
+    # 비교 전용: 숫자/영문만 남겨 구두점 노이즈를 더 줄인다.
+    upper = _normalize_text(value)
+    return re.sub(r"[^A-Z0-9]", "", upper)
+
+
 def _resolve_roi(image: np.ndarray) -> tuple[np.ndarray, int, int, int, int]:
     h, w = image.shape[:2]
     x = int(settings.OCR_ROI_X or 0)
@@ -71,6 +77,49 @@ def _preprocess_for_ocr(roi: np.ndarray) -> np.ndarray:
     return bw
 
 
+def _build_tesseract_config() -> str:
+    return (
+        f"--oem 3 --psm {int(settings.OCR_PSM)} "
+        f"-c tessedit_char_whitelist={settings.OCR_CHAR_WHITELIST}"
+    )
+
+
+def _read_best_orientation_text(prep: np.ndarray, lang: str, config: str) -> str:
+    """
+    세로 텍스트 대응: 원본 + 90도 회전 후보 중 더 그럴듯한 문자열을 선택한다.
+    """
+    import pytesseract
+
+    candidates: list[str] = []
+    candidates.append(pytesseract.image_to_string(prep, lang=lang, config=config))
+
+    if settings.OCR_AUTO_ROTATE_VERTICAL and prep.shape[0] > prep.shape[1]:
+        rot_cw = cv2.rotate(prep, cv2.ROTATE_90_CLOCKWISE)
+        rot_ccw = cv2.rotate(prep, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        candidates.append(pytesseract.image_to_string(rot_cw, lang=lang, config=config))
+        candidates.append(pytesseract.image_to_string(rot_ccw, lang=lang, config=config))
+
+    expected = _normalize_text(settings.OCR_EXPECTED_MODEL_NAME or "")
+    expected_alnum = _normalize_text_alnum(settings.OCR_EXPECTED_MODEL_NAME or "")
+    best_text = candidates[0] if candidates else ""
+    best_score = -1
+
+    for text in candidates:
+        normalized = _normalize_text(text)
+        normalized_alnum = _normalize_text_alnum(text)
+        score = len(normalized_alnum)
+        if expected:
+            if expected in normalized:
+                score += 1000
+            if expected_alnum and expected_alnum in normalized_alnum:
+                score += 1000
+        if score > best_score:
+            best_score = score
+            best_text = text
+
+    return best_text
+
+
 def read_model_name(image: np.ndarray) -> Optional[OcrResult]:
     """
     이미지에서 모델명 텍스트를 OCR로 읽는다.
@@ -90,18 +139,18 @@ def read_model_name(image: np.ndarray) -> Optional[OcrResult]:
     start = time.perf_counter()
     roi, x, y, w, h = _resolve_roi(image)
     prep = _preprocess_for_ocr(roi)
-
-    config = (
-        f"--oem 3 --psm {int(settings.OCR_PSM)} "
-        f"-c tessedit_char_whitelist={settings.OCR_CHAR_WHITELIST}"
-    )
-    raw_text = pytesseract.image_to_string(prep, lang=settings.OCR_LANG, config=config)
+    config = _build_tesseract_config()
+    raw_text = _read_best_orientation_text(prep, lang=settings.OCR_LANG, config=config)
 
     normalized = _normalize_text(raw_text)
+    normalized_alnum = _normalize_text_alnum(raw_text)
     expected = _normalize_text(settings.OCR_EXPECTED_MODEL_NAME or "")
+    expected_alnum = _normalize_text_alnum(settings.OCR_EXPECTED_MODEL_NAME or "")
     is_match = None
     if expected:
-        is_match = expected in normalized
+        is_match = (expected in normalized) or (
+            bool(expected_alnum) and expected_alnum in normalized_alnum
+        )
 
     elapsed_ms = int((time.perf_counter() - start) * 1000)
     return OcrResult(
