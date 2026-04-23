@@ -11,6 +11,7 @@ Base URL: http://<라즈베리파이_IP>:8000
 import asyncio
 import logging
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -27,6 +28,9 @@ logger = logging.getLogger(__name__)
 
 # APIRouter: main.py의 FastAPI 앱에 include_router()로 등록한다.
 router = APIRouter(prefix="/edge", tags=["Edge Device"])
+
+_preview_lock = threading.Lock()
+_last_preview_jpeg: Optional[bytes] = None
 
 
 def _normalize_stage2_mode(stage2_source: Optional[str]) -> str:
@@ -137,19 +141,35 @@ async def camera_preview_frame() -> Response:
         if cam is None:
             raise HTTPException(status_code=503, detail="카메라가 초기화되지 않았습니다.")
 
-        frame = cam.capture()
-        ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
-        if not ok:
-            raise HTTPException(status_code=500, detail="카메라 프레임 인코딩 실패")
+        # 프리뷰와 검사 파이프라인이 동시에 카메라를 읽을 수 있어 직렬화한다.
+        with _preview_lock:
+            frame = cam.capture()
+            ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+            if not ok:
+                raise HTTPException(status_code=500, detail="카메라 프레임 인코딩 실패")
+
+            global _last_preview_jpeg
+            _last_preview_jpeg = encoded.tobytes()
 
         return Response(
-            content=encoded.tobytes(),
+            content=_last_preview_jpeg,
             media_type="image/jpeg",
             headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
         )
     except HTTPException:
         raise
     except Exception as e:
+        # 프레임 일시 실패 시 마지막 정상 프레임을 반환해 화면 정지를 줄인다.
+        if _last_preview_jpeg is not None:
+            logger.warning("[프리뷰] 캡처 실패 — 마지막 정상 프레임으로 대체: %s", e)
+            return Response(
+                content=_last_preview_jpeg,
+                media_type="image/jpeg",
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "X-Preview-Stale": "1",
+                },
+            )
         raise HTTPException(status_code=500, detail=f"카메라 프리뷰 실패: {e}") from e
 
 

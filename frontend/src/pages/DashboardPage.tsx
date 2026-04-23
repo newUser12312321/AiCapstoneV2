@@ -33,7 +33,7 @@ export default function DashboardPage() {
   /* 최근 15건 — 대시보드 하단 실시간 피드 테이블 */
   const { data: recentLogs = [], isLoading } = useRecentInspections(15)
 
-  const PREVIEW_REFRESH_MS = 250
+  const PREVIEW_REFRESH_MS = 500
 
   useEffect(() => {
     const timer = window.setInterval(() => {
