@@ -6,6 +6,7 @@
  * 수동 PCB 검사 1회 실행 (백그라운드). 결과는 Spring Boot DB에 적재된다.
  */
 export type Stage2SourceMode = 'aligned' | 'raw'
+export type CameraFocusState = { auto: boolean; value: number }
 
 export async function triggerEdgeInspection(
   stage2Source: Stage2SourceMode
@@ -63,4 +64,32 @@ export async function triggerInspectionFromUpload(
     throw new Error(detail || `${res.status} ${res.statusText}`)
   }
   return res.json() as Promise<{ message: string }>
+}
+
+export async function fetchCameraFocus(): Promise<CameraFocusState> {
+  const res = await fetch('/edge/camera/focus')
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(detail || `${res.status}`)
+  }
+  const data = (await res.json()) as { camera_focus?: CameraFocusState }
+  if (!data.camera_focus) {
+    throw new Error('카메라 초점 정보를 불러오지 못했습니다.')
+  }
+  return data.camera_focus
+}
+
+export async function updateCameraFocus(
+  payload: CameraFocusState
+): Promise<{ message: string; camera_focus: CameraFocusState }> {
+  const res = await fetch('/edge/camera/focus', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(detail || `${res.status} ${res.statusText}`)
+  }
+  return res.json() as Promise<{ message: string; camera_focus: CameraFocusState }>
 }

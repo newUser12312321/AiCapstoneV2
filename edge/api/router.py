@@ -272,6 +272,45 @@ class InspectFromFileBody(BaseModel):
     )
 
 
+class CameraFocusBody(BaseModel):
+    auto: bool = Field(default=False, description="true면 오토포커스")
+    value: int = Field(default=30, ge=0, le=255, description="수동 초점 값 (0~255)")
+
+
+@router.get("/camera/focus", summary="카메라 초점 상태 조회")
+async def get_camera_focus() -> dict[str, Any]:
+    try:
+        import main as main_mod
+
+        cam = getattr(main_mod, "camera", None)
+        if cam is None:
+            raise HTTPException(status_code=503, detail="카메라가 초기화되지 않았습니다.")
+        with _preview_lock:
+            state = cam.get_focus_state()
+        return {"camera_focus": state}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"초점 상태 조회 실패: {e}") from e
+
+
+@router.post("/camera/focus", summary="카메라 초점 실시간 설정")
+async def set_camera_focus(body: CameraFocusBody) -> dict[str, Any]:
+    try:
+        import main as main_mod
+
+        cam = getattr(main_mod, "camera", None)
+        if cam is None:
+            raise HTTPException(status_code=503, detail="카메라가 초기화되지 않았습니다.")
+        with _preview_lock:
+            state = cam.set_focus_runtime(auto=body.auto, value=body.value)
+        return {"message": "카메라 초점을 적용했습니다.", "camera_focus": state}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"초점 설정 실패: {e}") from e
+
+
 @router.post("/inspect/upload", summary="이미지 업로드 후 검사 (캡처 생략)")
 async def inspect_from_uploaded_file(
     background_tasks: BackgroundTasks,
