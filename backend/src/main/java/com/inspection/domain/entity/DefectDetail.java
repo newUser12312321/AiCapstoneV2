@@ -37,7 +37,7 @@ public class DefectDetail {
      * 결함 종류
      * 예: "TRACE_OPEN" (단선), "METAL_DAMAGE" (까짐), "FIDUCIAL_MISSING" (마크 누락)
      */
-    @Column(name = "defect_type", nullable = false, length = 50)
+    @Column(name = "defect_type", nullable = false, length = 255)
     private String defectType;
 
     /** YOLO 모델의 신뢰도 점수 (0.0 ~ 1.0) */
