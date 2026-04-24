@@ -17,6 +17,7 @@ import Header from '@/components/common/Header'
 import Sidebar from '@/components/common/Sidebar'
 import DashboardPage from '@/pages/DashboardPage'
 import HistoryPage from '@/pages/HistoryPage'
+import BoardReferencePage from '@/pages/BoardReferencePage'
 
 /** 아직 구현되지 않은 경로를 위한 플레이스홀더 페이지 */
 function PlaceholderPage({ title }: { title: string }) {
@@ -49,6 +50,9 @@ export default function App() {
 
             {/* 검사 이력 */}
             <Route path="/history"  element={<HistoryPage />} />
+
+            {/* 보드 기준(정상 이미지/기대 개수) */}
+            <Route path="/board-reference" element={<BoardReferencePage />} />
 
             {/* 설정 (플레이스홀더) */}
             <Route path="/settings" element={<PlaceholderPage title="설정" />} />

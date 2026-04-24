@@ -125,6 +125,23 @@ export const DEFECT_COLOR: Record<string, string> = {
 
 /** 표시용 라벨 (한글 매핑 없으면 원문 그대로) */
 export function defectDisplayName(defectType: string): string {
+  // Edge synthetic missing-count marker:
+  // MISSING:ic_chip:expected=2,detected=1,missing=1
+  if (defectType.startsWith('MISSING:')) {
+    const m = defectType.match(
+      /^MISSING:([^:]+):expected=(\d+),detected=(\d+),missing=(\d+)$/
+    )
+    if (m) {
+      const [, rawCls, expected, detected, missing] = m
+      const clsKorean =
+        DEFECT_LABEL[rawCls] ??
+        DEFECT_LABEL[rawCls.toUpperCase()] ??
+        rawCls
+      return `${clsKorean} 누락 (기대 ${expected}개, 검출 ${detected}개, 누락 ${missing}개)`
+    }
+    return defectType.replace('MISSING:', '누락: ')
+  }
+
   return (
     DEFECT_LABEL[defectType] ??
     DEFECT_LABEL[defectType.toUpperCase()] ??

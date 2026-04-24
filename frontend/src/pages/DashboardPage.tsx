@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Camera, FolderOpen, Loader2, Trash2 } from 'lucide-react'
+import { Camera, Loader2, Trash2 } from 'lucide-react'
 import StatCardGroup from '@/components/dashboard/StatCard'
 import PassFailChart from '@/components/dashboard/PassFailChart'
 import TrendChart from '@/components/dashboard/TrendChart'
@@ -23,17 +23,13 @@ import { deleteAllInspections } from '@/api/inspectionApi'
 import {
   fetchCameraFocus,
   triggerEdgeInspection,
-  triggerInspectionFromUpload,
   updateCameraFocus,
-  type Stage2SourceMode,
 } from '@/api/edgeApi'
 import { useRecentInspections } from '@/hooks/useInspectionData'
 
 export default function DashboardPage() {
   const queryClient = useQueryClient()
   const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
-  const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [stage2Source, setStage2Source] = useState<Stage2SourceMode>('aligned')
   const [focusAuto, setFocusAuto] = useState(false)
   const [focusValue, setFocusValue] = useState(30)
   const focusDebounceRef = useRef<number | null>(null)
@@ -53,7 +49,7 @@ export default function DashboardPage() {
   }
 
   const triggerMutation = useMutation({
-    mutationFn: () => triggerEdgeInspection(stage2Source),
+    mutationFn: () => triggerEdgeInspection('aligned'),
     onSuccess: (data) => {
       setActionMsg({ type: 'ok', text: data.message })
       setTimeout(() => invalidateInspections(), 2500)
@@ -72,19 +68,6 @@ export default function DashboardPage() {
     },
     onError: (e: Error) => {
       setActionMsg({ type: 'err', text: e.message || '삭제 실패' })
-    },
-  })
-
-  const uploadInspectMutation = useMutation({
-    mutationFn: (file: File) => triggerInspectionFromUpload(file, stage2Source),
-    onSuccess: (data) => {
-      setActionMsg({ type: 'ok', text: data.message })
-      setUploadFile(null)
-      setTimeout(() => invalidateInspections(), 2500)
-      setTimeout(() => invalidateInspections(), 6000)
-    },
-    onError: (e: Error) => {
-      setActionMsg({ type: 'err', text: e.message || '업로드 검사 실패' })
     },
   })
 
@@ -145,17 +128,6 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0 min-w-[min(100%,280px)]">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-gray-500">Stage2 입력</span>
-            <select
-              value={stage2Source}
-              onChange={(e) => setStage2Source(e.target.value as Stage2SourceMode)}
-              className="bg-gray-900 border border-gray-700 rounded-md px-2 py-1 text-gray-200"
-            >
-              <option value="aligned">aligned (좌표 정합 후)</option>
-              <option value="raw">raw (원본)</option>
-            </select>
-          </div>
           <div className="flex flex-wrap items-center gap-2 justify-end">
           <button
             type="button"
@@ -186,40 +158,6 @@ export default function DashboardPage() {
             )}
             이력 전체 삭제
           </button>
-          </div>
-          <div className="flex flex-col gap-2 w-full sm:max-w-md">
-            <label className="text-[11px] text-gray-500 font-medium uppercase tracking-wide block">
-              로컬 이미지 업로드로 검사
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="file"
-                accept=".jpg,.jpeg,.png,.bmp,.webp,image/*"
-                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-                className="block w-full text-xs text-gray-300 file:mr-2 file:px-2 file:py-1.5 file:rounded-md file:border-0 file:bg-gray-800 file:text-gray-200"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (!uploadFile) return
-                  setActionMsg(null)
-                  uploadInspectMutation.mutate(uploadFile)
-                }}
-                disabled={!uploadFile || uploadInspectMutation.isPending}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white transition-colors"
-              >
-                {uploadInspectMutation.isPending ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <FolderOpen size={16} />
-                )}
-                업로드 검사
-              </button>
-            </div>
-            <p className="text-[11px] text-gray-600 leading-snug">
-              업로드 파일은 엣지 서버의{' '}
-              <code className="text-gray-400">edge/captures/</code>에 저장됩니다.
-            </p>
           </div>
         </div>
       </div>
