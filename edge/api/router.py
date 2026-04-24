@@ -80,34 +80,15 @@ async def get_status() -> dict[str, Any]:
     """
     from inference.yolo_detector import resolve_edge_weights_path
 
-    sep = settings.USE_SEPARATE_MODELS
-    if sep:
-        wf = resolve_edge_weights_path(settings.YOLO_FIDUCIAL_WEIGHTS)
-        wd = resolve_edge_weights_path(settings.YOLO_DEFECT_WEIGHTS)
-        weights_loaded = wf.exists() and wd.exists()
-        yolo_block = {
-            "use_separate_models": True,
-            "fiducial_weights": str(wf),
-            "defect_weights": str(wd),
-            "fiducial_exists": wf.exists(),
-            "defect_exists": wd.exists(),
-            "weights_loaded": weights_loaded,
-            "weights_path": settings.YOLO_WEIGHTS_PATH,
-            "confidence_threshold": settings.YOLO_CONFIDENCE_THRESHOLD,
-            "fiducial_confidence": settings.effective_fiducial_confidence(),
-            "defect_confidence": settings.effective_defect_confidence(),
-        }
-    else:
-        wu = resolve_edge_weights_path(settings.YOLO_WEIGHTS_PATH)
-        weights_loaded = wu.exists()
-        yolo_block = {
-            "use_separate_models": False,
-            "weights_path": str(wu),
-            "weights_loaded": weights_loaded,
-            "confidence_threshold": settings.YOLO_CONFIDENCE_THRESHOLD,
-            "fiducial_confidence": settings.effective_fiducial_confidence(),
-            "defect_confidence": settings.effective_defect_confidence(),
-        }
+    wu = resolve_edge_weights_path(settings.YOLO_WEIGHTS_PATH)
+    weights_loaded = wu.exists()
+    yolo_block = {
+        "weights_path": str(wu),
+        "weights_loaded": weights_loaded,
+        "confidence_threshold": settings.YOLO_CONFIDENCE_THRESHOLD,
+        "fiducial_confidence": settings.effective_fiducial_confidence(),
+        "defect_confidence": settings.effective_defect_confidence(),
+    }
 
     return {
         "camera": {
@@ -115,19 +96,11 @@ async def get_status() -> dict[str, Any]:
             "resolution": f"{settings.CAMERA_WIDTH}x{settings.CAMERA_HEIGHT}",
         },
         "yolo": yolo_block,
-        "gpio": {
-            "buzzer_pin": settings.BUZZER_PIN,
-            "led_red_pin": settings.LED_RED_PIN,
-            "led_green_pin": settings.LED_GREEN_PIN,
-        },
         "server": {
             "base_url": settings.SERVER_BASE_URL,
         },
         "pipeline": {
             "stage2_source_mode": settings.STAGE2_SOURCE_MODE,
-            "ocr_enabled": settings.OCR_ENABLED,
-            "ocr_expected_model_name": settings.OCR_EXPECTED_MODEL_NAME,
-            "ocr_fail_on_mismatch": settings.OCR_FAIL_ON_MISMATCH,
         },
     }
 
@@ -346,12 +319,7 @@ async def inspect_from_uploaded_file(
         import main as main_mod
 
         det = getattr(main_mod, "detector", None)
-        f1 = getattr(main_mod, "fiducial_detector", None)
-        f2 = getattr(main_mod, "defect_detector", None)
-        if settings.USE_SEPARATE_MODELS:
-            if f1 is None or f2 is None:
-                raise HTTPException(status_code=503, detail="YOLO 분리 모델이 로드되지 않았습니다.")
-        elif det is None:
+        if det is None:
             raise HTTPException(status_code=503, detail="YOLO 모델이 로드되지 않았습니다.")
     except HTTPException:
         raise
@@ -409,12 +377,7 @@ async def inspect_from_file(
         import main as main_mod
 
         det = getattr(main_mod, "detector", None)
-        f1 = getattr(main_mod, "fiducial_detector", None)
-        f2 = getattr(main_mod, "defect_detector", None)
-        if settings.USE_SEPARATE_MODELS:
-            if f1 is None or f2 is None:
-                raise HTTPException(status_code=503, detail="YOLO 분리 모델이 로드되지 않았습니다.")
-        elif det is None:
+        if det is None:
             raise HTTPException(status_code=503, detail="YOLO 모델이 로드되지 않았습니다.")
     except HTTPException:
         raise
@@ -481,14 +444,6 @@ async def demo_force_fail() -> dict[str, Any]:
 
     packet = create_dummy_packet(device_id="RPI5-LINE-A", force_fail=True)
 
-    # GPIO 알람 동작
-    try:
-        from main import _gpio
-        if _gpio:
-            _gpio.signal_fail()
-    except Exception:
-        pass
-
     sender = ServerSender()
     response = sender.send(packet)
     sender.close()
@@ -515,13 +470,6 @@ async def demo_force_pass() -> dict[str, Any]:
     logger.info("[시연] PASS 강제 전송 요청")
 
     packet = create_dummy_packet(device_id="RPI5-LINE-A", force_pass=True)
-
-    try:
-        from main import _gpio
-        if _gpio:
-            _gpio.signal_pass()
-    except Exception:
-        pass
 
     sender = ServerSender()
     response = sender.send(packet)

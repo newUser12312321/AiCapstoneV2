@@ -46,12 +46,7 @@ class Settings(BaseSettings):
     CAMERA_FOCUS_POST_PLUG_AF_MS: int = Field(default=0, ge=0, le=10000)
 
     # ── YOLO 추론 설정 ───────────────────────────────────────────────────────
-    # Stage 1: 피듀셜 마크 탐지 모델 (클래스: FIDUCIAL)
-    YOLO_FIDUCIAL_WEIGHTS: str = Field(default="weights/fiducial_best.pt")
-    # Stage 2: 결함 탐지 모델 (클래스: TRACE_OPEN, METAL_DAMAGE)
-    YOLO_DEFECT_WEIGHTS: str = Field(default="weights/defect_best.pt")
-
-    # 하위 호환: 단일 모델 사용 시 (두 Stage 합쳐서 학습한 경우)
+    # 단일 통합 모델 (best.pt) 사용
     YOLO_WEIGHTS_PATH: str = Field(default="weights/best.pt")
 
     # 이 값 이상의 confidence (Stage 전용 값이 없을 때 피듀셜·결함 공통 기본)
@@ -67,11 +62,6 @@ class Settings(BaseSettings):
     YOLO_PREDICT_IMGSZ: int = Field(default=1024, ge=320, le=1280)
     # True: TTA(증강 추론) — 약한 클래스 재현율 소폭↑, 추론 시간↑
     YOLO_PREDICT_AUGMENT: bool = Field(default=False)
-
-    # 2-Stage 분리 모델 사용 여부
-    # True: fiducial_best.pt + defect_best.pt 각각 사용
-    # False: best.pt 단일 모델 사용
-    USE_SEPARATE_MODELS: bool = Field(default=False)
 
     # True: Stage 2를 피듀셜 사이 좁은 ROI가 아니라 정합(또는 raw) **전체 프레임**에 수행.
     # PCB 다클래스(mount_hole, gold_finger_row 등)는 ROI 밖이 대부분이라 True 권장.
@@ -96,42 +86,20 @@ class Settings(BaseSettings):
     # False: 정렬 성공 시 PASS — 탐지 박스는 그대로 서버·대시보드에 보냄(부품 검출·표시용).
     FAIL_ON_ANY_YOLO_DETECTION: bool = Field(default=True)
 
-    # ── OCR 설정 (PCB 모델명 인식) ───────────────────────────────────────────
-    OCR_ENABLED: bool = Field(default=True)
-    # 예: "C-SERIES". 비워두면 OCR 결과는 로그만 남기고 판정에는 미반영.
-    OCR_EXPECTED_MODEL_NAME: Optional[str] = Field(default="C-SERIES")
-    # True: 기대 모델명 미검출 시 FAIL 처리.
-    OCR_FAIL_ON_MISMATCH: bool = Field(default=True)
-    # OCR 엔진 선택: "tesseract" | "easyocr"
-    OCR_ENGINE: str = Field(default="tesseract")
-    # OCR 입력 소스:
-    # - "aligned": 좌표 정합 후 이미지만 사용 (권장)
-    # - "raw": 원본 캡처 이미지만 사용
-    # - "both": raw + aligned 모두 OCR 후 더 나은 결과 선택
-    OCR_SOURCE_MODE: str = Field(default="aligned")
-    # OCR ROI (픽셀). 기본값은 aligned 1920x1080 기준 C-SERIES 세로 텍스트 영역.
-    OCR_ROI_X: Optional[int] = Field(default=120, ge=0)
-    OCR_ROI_Y: Optional[int] = Field(default=170, ge=0)
-    OCR_ROI_WIDTH: Optional[int] = Field(default=180, gt=0)
-    OCR_ROI_HEIGHT: Optional[int] = Field(default=690, gt=0)
-    # 세로 라벨(ROI 높이 > 너비)일 때 OCR 전에 90도 회전 후보를 함께 평가.
-    OCR_AUTO_ROTATE_VERTICAL: bool = Field(default=True)
-    # Tesseract 옵션
-    OCR_LANG: str = Field(default="eng")
-    OCR_PSM: int = Field(default=6, ge=3, le=13)
-    # 기본 PSM 외에 추가로 시도할 후보 목록 (쉼표 구분). 예: "7,11"
-    OCR_PSM_CANDIDATES: str = Field(default="7,11")
-    # OCR 입력 업스케일 배율 (작은 실크문자 인식 개선). 1.0이면 비활성.
-    OCR_UPSCALE_FACTOR: float = Field(default=2.0, ge=1.0, le=4.0)
-    OCR_CHAR_WHITELIST: str = Field(default="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._/")
+    # ── 멀티보드 라우팅 설정 ──────────────────────────────────────────────────
+    MULTI_BOARD_ENABLED: bool = Field(default=False)
+    # 보드 식별용 모델 (board-name-zone 클래스 탐지 전용, 기본은 현재 best.pt)
+    BOARD_ID_WEIGHTS_PATH: str = Field(default="weights/best.pt")
+    # 보드 프로파일(JSON) 파일 경로. edge/ 기준 상대 경로 허용.
+    BOARD_PROFILES_PATH: str = Field(default="config/board_profiles.json")
+    BOARD_ID_MIN_CONFIDENCE: float = Field(default=0.4, ge=0.0, le=1.0)
+    # unknown 처리 정책: abort | fallback_default
+    BOARD_UNKNOWN_POLICY: str = Field(default="abort")
+    # fallback_default 정책에서 사용할 기본 보드 타입 키
+    DEFAULT_BOARD_TYPE: Optional[str] = Field(default=None)
 
     # ── FastAPI 서버 포트 ────────────────────────────────────────────────────
     EDGE_API_PORT: int = Field(default=8000)
-
-    # ── GPIO 핀 번호 (BCM 모드) ──────────────────────────────────────────────
-    BUZZER_PIN: int = Field(default=17)
-    LED_RED_PIN: int = Field(default=27)    # 불합격(FAIL) 표시
-    LED_GREEN_PIN: int = Field(default=22)  # 합격(PASS) 표시
 
     # ── 실행 환경 ────────────────────────────────────────────────────────────
     # "production": 실제 라즈베리파이에서 GPIO/YOLO 실제 동작
@@ -182,21 +150,13 @@ class Settings(BaseSettings):
             return "aligned"
         return mode
 
-    @field_validator("OCR_SOURCE_MODE")
+    @field_validator("BOARD_UNKNOWN_POLICY")
     @classmethod
-    def _validate_ocr_source_mode(cls, v: str) -> str:
-        mode = (v or "").strip().lower()
-        if mode not in {"aligned", "raw", "both"}:
-            raise ValueError("OCR_SOURCE_MODE must be 'aligned', 'raw', or 'both'")
-        return mode
-
-    @field_validator("OCR_ENGINE")
-    @classmethod
-    def _validate_ocr_engine(cls, v: str) -> str:
-        engine = (v or "").strip().lower()
-        if engine not in {"tesseract", "easyocr"}:
-            raise ValueError("OCR_ENGINE must be 'tesseract' or 'easyocr'")
-        return engine
+    def _validate_board_unknown_policy(cls, v: str) -> str:
+        policy = (v or "").strip().lower()
+        if policy not in {"abort", "fallback_default"}:
+            raise ValueError("BOARD_UNKNOWN_POLICY must be 'abort' or 'fallback_default'")
+        return policy
 
     # pydantic-settings 설정:
     # .env 파일을 자동으로 찾아 읽고, 대소문자를 구분하지 않는다.

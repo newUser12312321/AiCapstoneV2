@@ -18,13 +18,7 @@ pydantic-settings==2.2.1
 requests==2.31.0
 httpx==0.27.0
 
-# ===== 하드웨어 제어 (라즈베리파이 전용) =====
-# gpiozero==2.0.1            # 라즈베리파이에서만 활성화
-# RPi.GPIO==0.7.1            # gpiozero 백엔드
-
 # ===== 유틸리티 =====
 python-dotenv==1.0.1
 numpy==1.26.4
 Pillow==10.3.0
-pytesseract==0.3.10
-easyocr==1.7.1

@@ -1,0 +1,16 @@
+{
+  "G_SERIES": {
+    "identifier_classes": [
+      "model_name_zone",
+      "g_series_name_zone"
+    ],
+    "model_path": "weights/best.pt",
+    "expected_counts": {
+      "mount_hole": 4,
+      "fiducial": 2,
+      "ic_chip": 8,
+      "smd_array_block": 1,
+      "edge_connector_zone": 1
+    }
+  }
+}
