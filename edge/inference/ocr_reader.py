@@ -32,6 +32,7 @@ class OcrResult:
     roi_y: int
     roi_w: int
     roi_h: int
+    source: str = "aligned"
 
 
 def _normalize_text(value: str) -> str:
@@ -77,9 +78,9 @@ def _preprocess_for_ocr(roi: np.ndarray) -> np.ndarray:
     return bw
 
 
-def _build_tesseract_config() -> str:
+def _build_tesseract_config(psm: int) -> str:
     return (
-        f"--oem 3 --psm {int(settings.OCR_PSM)} "
+        f"--oem 3 --psm {int(psm)} "
         f"-c tessedit_char_whitelist={settings.OCR_CHAR_WHITELIST}"
     )
 
@@ -120,7 +121,59 @@ def _read_best_orientation_text(prep: np.ndarray, lang: str, config: str) -> str
     return best_text
 
 
-def read_model_name(image: np.ndarray) -> Optional[OcrResult]:
+def _score_candidate_text(text: str, expected: str, expected_alnum: str) -> int:
+    normalized = _normalize_text(text)
+    normalized_alnum = _normalize_text_alnum(text)
+    score = len(normalized_alnum)
+    if expected:
+        if expected in normalized:
+            score += 1000
+        if expected_alnum and expected_alnum in normalized_alnum:
+            score += 1000
+    return score
+
+
+def _parse_psm_candidates() -> list[int]:
+    values: list[int] = [int(settings.OCR_PSM)]
+    raw = (settings.OCR_PSM_CANDIDATES or "").strip()
+    if raw:
+        for token in raw.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            try:
+                psm = int(token)
+            except ValueError:
+                continue
+            if 3 <= psm <= 13 and psm not in values:
+                values.append(psm)
+    return values
+
+
+def _upscale_for_ocr(prep: np.ndarray) -> np.ndarray:
+    factor = float(settings.OCR_UPSCALE_FACTOR or 1.0)
+    if factor <= 1.0:
+        return prep
+    return cv2.resize(prep, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC)
+
+
+def select_best_ocr_result(results: list[Optional[OcrResult]]) -> Optional[OcrResult]:
+    valid = [r for r in results if r is not None]
+    if not valid:
+        return None
+
+    def _rank_key(r: OcrResult) -> tuple[int, int, int]:
+        # 1) 기대 문자열 매칭 성공 우선, 2) 정규화 길이, 3) 원문 길이
+        return (
+            1 if r.is_match is True else 0,
+            len(r.normalized_text),
+            len(r.text),
+        )
+
+    return max(valid, key=_rank_key)
+
+
+def read_model_name(image: np.ndarray, source: str = "aligned") -> Optional[OcrResult]:
     """
     이미지에서 모델명 텍스트를 OCR로 읽는다.
 
@@ -139,13 +192,23 @@ def read_model_name(image: np.ndarray) -> Optional[OcrResult]:
     start = time.perf_counter()
     roi, x, y, w, h = _resolve_roi(image)
     prep = _preprocess_for_ocr(roi)
-    config = _build_tesseract_config()
-    raw_text = _read_best_orientation_text(prep, lang=settings.OCR_LANG, config=config)
+    prep = _upscale_for_ocr(prep)
+    expected = _normalize_text(settings.OCR_EXPECTED_MODEL_NAME or "")
+    expected_alnum = _normalize_text_alnum(settings.OCR_EXPECTED_MODEL_NAME or "")
+
+    best_text = ""
+    best_score = -1
+    for psm in _parse_psm_candidates():
+        config = _build_tesseract_config(psm)
+        cand = _read_best_orientation_text(prep, lang=settings.OCR_LANG, config=config)
+        score = _score_candidate_text(cand, expected, expected_alnum)
+        if score > best_score:
+            best_score = score
+            best_text = cand
+    raw_text = best_text
 
     normalized = _normalize_text(raw_text)
     normalized_alnum = _normalize_text_alnum(raw_text)
-    expected = _normalize_text(settings.OCR_EXPECTED_MODEL_NAME or "")
-    expected_alnum = _normalize_text_alnum(settings.OCR_EXPECTED_MODEL_NAME or "")
     is_match = None
     if expected:
         is_match = (expected in normalized) or (
@@ -163,4 +226,5 @@ def read_model_name(image: np.ndarray) -> Optional[OcrResult]:
         roi_y=y,
         roi_w=w,
         roi_h=h,
+        source=source,
     )

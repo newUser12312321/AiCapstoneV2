@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     # Tesseract 옵션
     OCR_LANG: str = Field(default="eng")
     OCR_PSM: int = Field(default=6, ge=3, le=13)
+    # 기본 PSM 외에 추가로 시도할 후보 목록 (쉼표 구분). 예: "7,11"
+    OCR_PSM_CANDIDATES: str = Field(default="7,11")
+    # OCR 입력 업스케일 배율 (작은 실크문자 인식 개선). 1.0이면 비활성.
+    OCR_UPSCALE_FACTOR: float = Field(default=2.0, ge=1.0, le=4.0)
     OCR_CHAR_WHITELIST: str = Field(default="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._/")
 
     # ── FastAPI 서버 포트 ────────────────────────────────────────────────────
