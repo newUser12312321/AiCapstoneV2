@@ -384,10 +384,16 @@ def _run_production_vision_pipeline(
         ]
 
         # STEP 2-C: OCR 모델명 인식 (옵션)
-        # 정합 이미지 + 원본 이미지 둘 다 시도 후 더 신뢰도 높은 결과를 사용한다.
-        ocr_aligned = read_model_name(frame, source="aligned")
-        ocr_raw = read_model_name(raw_frame, source="raw")
-        ocr_result = select_best_ocr_result([ocr_aligned, ocr_raw])
+        ocr_mode = settings.OCR_SOURCE_MODE
+        if ocr_mode == "aligned":
+            ocr_result = read_model_name(frame, source="aligned")
+        elif ocr_mode == "raw":
+            ocr_result = read_model_name(raw_frame, source="raw")
+        else:
+            # both: 정합 이미지 + 원본 이미지 둘 다 시도 후 더 신뢰도 높은 결과 사용
+            ocr_aligned = read_model_name(frame, source="aligned")
+            ocr_raw = read_model_name(raw_frame, source="raw")
+            ocr_result = select_best_ocr_result([ocr_aligned, ocr_raw])
         if ocr_result is not None:
             logger.info(
                 "[파이프라인] OCR 결과(%s): raw='%s' normalized='%s' expected='%s' match=%s (%dms)",

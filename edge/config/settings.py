@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     OCR_EXPECTED_MODEL_NAME: Optional[str] = Field(default="C-SERIES")
     # True: 기대 모델명 미검출 시 FAIL 처리.
     OCR_FAIL_ON_MISMATCH: bool = Field(default=True)
+    # OCR 입력 소스:
+    # - "aligned": 좌표 정합 후 이미지만 사용 (권장)
+    # - "raw": 원본 캡처 이미지만 사용
+    # - "both": raw + aligned 모두 OCR 후 더 나은 결과 선택
+    OCR_SOURCE_MODE: str = Field(default="aligned")
     # OCR ROI (픽셀). 기본값은 aligned 1920x1080 기준 C-SERIES 세로 텍스트 영역.
     OCR_ROI_X: Optional[int] = Field(default=120, ge=0)
     OCR_ROI_Y: Optional[int] = Field(default=170, ge=0)
@@ -173,6 +178,14 @@ class Settings(BaseSettings):
             raise ValueError("STAGE2_SOURCE_MODE must be 'raw', 'deskew', or 'aligned'")
         if mode == "deskew":
             return "aligned"
+        return mode
+
+    @field_validator("OCR_SOURCE_MODE")
+    @classmethod
+    def _validate_ocr_source_mode(cls, v: str) -> str:
+        mode = (v or "").strip().lower()
+        if mode not in {"aligned", "raw", "both"}:
+            raise ValueError("OCR_SOURCE_MODE must be 'aligned', 'raw', or 'both'")
         return mode
 
     # pydantic-settings 설정:

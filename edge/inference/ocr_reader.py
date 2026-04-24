@@ -162,12 +162,22 @@ def select_best_ocr_result(results: list[Optional[OcrResult]]) -> Optional[OcrRe
     if not valid:
         return None
 
-    def _rank_key(r: OcrResult) -> tuple[int, int, int]:
-        # 1) 기대 문자열 매칭 성공 우선, 2) 정규화 길이, 3) 원문 길이
+    def _noise_penalty(r: OcrResult) -> int:
+        # 다중 줄/과도한 길이는 OCR 잡문자 가능성이 높아 감점한다.
+        newline_penalty = r.text.count("\n") * 6
+        long_penalty = max(0, len(r.normalized_text) - 20)
+        return newline_penalty + long_penalty
+
+    def _rank_key(r: OcrResult) -> tuple[int, int, int, int]:
+        # 1) 기대 문자열 매칭 성공 우선
+        # 2) 잡문자 패턴이 적을수록 우선
+        # 3) 정규화 길이
+        # 4) aligned 우선(동점 타이브레이커)
         return (
             1 if r.is_match is True else 0,
+            -_noise_penalty(r),
             len(r.normalized_text),
-            len(r.text),
+            1 if r.source == "aligned" else 0,
         )
 
     return max(valid, key=_rank_key)
