@@ -259,6 +259,8 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
   const showSideBySide = Boolean(rawSrc && deskewSrc)
   const f12DistancePx = log != null ? fiducialDistancePx(log) : null
   const defects = log?.defects ?? []
+  const overlayDefects = defects.filter((d) => !d.defectType.startsWith('MISSING:'))
+  const missingReasons = defects.filter((d) => d.defectType.startsWith('MISSING:'))
 
   /* 오버레이는 보정 후 이미지 기준 */
   const imgRef = useRef<HTMLImageElement>(null)
@@ -410,7 +412,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                             scaleY={scaleY}
                           />
                         )}
-                        {defects.map((d, i) => (
+                        {overlayDefects.map((d, i) => (
                           <DefectBox
                             key={`${d.defectType}-${d.bboxX}-${d.bboxY}-${i}`}
                             x={d.bboxX}
@@ -475,7 +477,7 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
                       scaleY={scaleY}
                     />
                   )}
-                  {defects.map((d, i) => (
+                  {overlayDefects.map((d, i) => (
                     <DefectBox
                       key={`${d.defectType}-${d.bboxX}-${d.bboxY}-${i}`}
                       x={d.bboxX}
@@ -565,16 +567,29 @@ export default function DefectViewer({ inspectionId, onClose }: DefectViewerProp
               )}
               <MetaRow label="추론 시간"   value={log.inferenceTimeMs != null ? `${log.inferenceTimeMs}ms` : '—'} />
               <MetaRow label="총 처리"     value={log.totalTimeMs != null ? `${log.totalTimeMs}ms` : '—'} />
-              <MetaRow label="검출 수"     value={`${defects.length}건`} />
+              <MetaRow label="검출 수"     value={`${overlayDefects.length}건`} />
             </dl>
 
-            {defects.length > 0 && (
+            {missingReasons.length > 0 && (
+              <div className="mt-3 rounded-md border border-red-900/50 bg-red-950/25 px-3 py-2">
+                <h4 className="text-[11px] font-semibold text-red-300 mb-1">FAIL 원인</h4>
+                <ul className="space-y-1">
+                  {missingReasons.map((d, i) => (
+                    <li key={`${d.defectType}-${i}`} className="text-[11px] text-red-200">
+                      - {defectDisplayName(d.defectType)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {overlayDefects.length > 0 && (
               <div className="mt-4 border-t border-gray-800 pt-3">
                 <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
                   검출 좌표
                 </h4>
                 <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
-                  {defects.map((d, i) => {
+                  {overlayDefects.map((d, i) => {
                     const cx = d.bboxX + Math.round(d.bboxWidth / 2)
                     const cy = d.bboxY + Math.round(d.bboxHeight / 2)
                     const color = DEFECT_COLOR[d.defectType] ?? '#f87171'

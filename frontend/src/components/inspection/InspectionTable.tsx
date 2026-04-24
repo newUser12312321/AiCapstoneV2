@@ -136,7 +136,7 @@ export default function InspectionTable({
           {/* 헤더 */}
           <thead>
             <tr className="bg-gray-900 text-left">
-              {['ID', '시각', '디바이스', '결과', '검출 클래스', '오차 (°)', '추론 (ms)', ''].map((h) => (
+              {['ID', '시각', '검사 PCB명', '결과', '검출 클래스', '오차 (°)', '추론 (ms)', ''].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider"
