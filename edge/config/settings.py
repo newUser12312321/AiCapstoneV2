@@ -102,6 +102,8 @@ class Settings(BaseSettings):
     OCR_EXPECTED_MODEL_NAME: Optional[str] = Field(default="C-SERIES")
     # True: 기대 모델명 미검출 시 FAIL 처리.
     OCR_FAIL_ON_MISMATCH: bool = Field(default=True)
+    # OCR 엔진 선택: "tesseract" | "easyocr"
+    OCR_ENGINE: str = Field(default="tesseract")
     # OCR 입력 소스:
     # - "aligned": 좌표 정합 후 이미지만 사용 (권장)
     # - "raw": 원본 캡처 이미지만 사용
@@ -187,6 +189,14 @@ class Settings(BaseSettings):
         if mode not in {"aligned", "raw", "both"}:
             raise ValueError("OCR_SOURCE_MODE must be 'aligned', 'raw', or 'both'")
         return mode
+
+    @field_validator("OCR_ENGINE")
+    @classmethod
+    def _validate_ocr_engine(cls, v: str) -> str:
+        engine = (v or "").strip().lower()
+        if engine not in {"tesseract", "easyocr"}:
+            raise ValueError("OCR_ENGINE must be 'tesseract' or 'easyocr'")
+        return engine
 
     # pydantic-settings 설정:
     # .env 파일을 자동으로 찾아 읽고, 대소문자를 구분하지 않는다.

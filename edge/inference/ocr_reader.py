@@ -1,7 +1,7 @@
 """
 PCB 모델명 OCR 유틸리티.
 
-Tesseract(pytesseract) 기반으로 이미지에서 텍스트를 읽고,
+설정에 따라 Tesseract(pytesseract) 또는 EasyOCR로 텍스트를 읽고,
 설정된 기대 모델명과의 매칭 여부를 계산한다.
 """
 
@@ -19,6 +19,7 @@ import numpy as np
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
+_easyocr_reader = None
 
 
 @dataclass
@@ -85,39 +86,53 @@ def _build_tesseract_config(psm: int) -> str:
     )
 
 
-def _read_best_orientation_text(prep: np.ndarray, lang: str, config: str) -> str:
-    """
-    세로 텍스트 대응: 원본 + 90도 회전 후보 중 더 그럴듯한 문자열을 선택한다.
-    """
+def _build_orientation_candidates(prep: np.ndarray) -> list[np.ndarray]:
+    imgs = [prep]
+    if settings.OCR_AUTO_ROTATE_VERTICAL and prep.shape[0] > prep.shape[1]:
+        imgs.append(cv2.rotate(prep, cv2.ROTATE_90_CLOCKWISE))
+        imgs.append(cv2.rotate(prep, cv2.ROTATE_90_COUNTERCLOCKWISE))
+    return imgs
+
+
+def _read_with_tesseract(prep: np.ndarray, psm: int) -> str:
     import pytesseract
 
-    candidates: list[str] = []
-    candidates.append(pytesseract.image_to_string(prep, lang=lang, config=config))
-
-    if settings.OCR_AUTO_ROTATE_VERTICAL and prep.shape[0] > prep.shape[1]:
-        rot_cw = cv2.rotate(prep, cv2.ROTATE_90_CLOCKWISE)
-        rot_ccw = cv2.rotate(prep, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        candidates.append(pytesseract.image_to_string(rot_cw, lang=lang, config=config))
-        candidates.append(pytesseract.image_to_string(rot_ccw, lang=lang, config=config))
-
+    config = _build_tesseract_config(psm)
     expected = _normalize_text(settings.OCR_EXPECTED_MODEL_NAME or "")
     expected_alnum = _normalize_text_alnum(settings.OCR_EXPECTED_MODEL_NAME or "")
-    best_text = candidates[0] if candidates else ""
+    best_text = ""
     best_score = -1
-
-    for text in candidates:
-        normalized = _normalize_text(text)
-        normalized_alnum = _normalize_text_alnum(text)
-        score = len(normalized_alnum)
-        if expected:
-            if expected in normalized:
-                score += 1000
-            if expected_alnum and expected_alnum in normalized_alnum:
-                score += 1000
+    for img in _build_orientation_candidates(prep):
+        text = pytesseract.image_to_string(img, lang=settings.OCR_LANG, config=config)
+        score = _score_candidate_text(text, expected, expected_alnum)
         if score > best_score:
             best_score = score
             best_text = text
+    return best_text
 
+
+def _get_easyocr_reader():
+    global _easyocr_reader
+    if _easyocr_reader is None:
+        import easyocr
+        # 한국어가 필요하면 OCR_LANG 확장 시 매핑 추가 가능. 현재는 영문 라벨 기준.
+        _easyocr_reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+    return _easyocr_reader
+
+
+def _read_with_easyocr(prep: np.ndarray) -> str:
+    expected = _normalize_text(settings.OCR_EXPECTED_MODEL_NAME or "")
+    expected_alnum = _normalize_text_alnum(settings.OCR_EXPECTED_MODEL_NAME or "")
+    reader = _get_easyocr_reader()
+    best_text = ""
+    best_score = -1
+    for img in _build_orientation_candidates(prep):
+        texts = reader.readtext(img, detail=0, paragraph=False)
+        merged = " ".join(t for t in texts if isinstance(t, str))
+        score = _score_candidate_text(merged, expected, expected_alnum)
+        if score > best_score:
+            best_score = score
+            best_text = merged
     return best_text
 
 
@@ -193,12 +208,6 @@ def read_model_name(image: np.ndarray, source: str = "aligned") -> Optional[OcrR
     if not settings.OCR_ENABLED:
         return None
 
-    try:
-        import pytesseract
-    except ImportError:
-        logger.warning("[OCR] pytesseract 미설치 — OCR 단계를 건너뜁니다.")
-        return None
-
     start = time.perf_counter()
     roi, x, y, w, h = _resolve_roi(image)
     prep = _preprocess_for_ocr(roi)
@@ -208,13 +217,24 @@ def read_model_name(image: np.ndarray, source: str = "aligned") -> Optional[OcrR
 
     best_text = ""
     best_score = -1
-    for psm in _parse_psm_candidates():
-        config = _build_tesseract_config(psm)
-        cand = _read_best_orientation_text(prep, lang=settings.OCR_LANG, config=config)
-        score = _score_candidate_text(cand, expected, expected_alnum)
-        if score > best_score:
-            best_score = score
+    engine = settings.OCR_ENGINE
+    try:
+        if engine == "easyocr":
+            cand = _read_with_easyocr(prep)
             best_text = cand
+        else:
+            for psm in _parse_psm_candidates():
+                cand = _read_with_tesseract(prep, psm)
+                score = _score_candidate_text(cand, expected, expected_alnum)
+                if score > best_score:
+                    best_score = score
+                    best_text = cand
+    except ImportError as e:
+        logger.warning("[OCR] %s 엔진 모듈 미설치 — OCR 단계를 건너뜁니다. (%s)", engine, e)
+        return None
+    except Exception as e:
+        logger.warning("[OCR] %s 엔진 처리 실패 — OCR 단계를 건너뜁니다. (%s)", engine, e)
+        return None
     raw_text = best_text
 
     normalized = _normalize_text(raw_text)
