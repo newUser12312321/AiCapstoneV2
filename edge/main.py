@@ -318,8 +318,8 @@ def _run_production_vision_pipeline(
                 selected_board_type = board_type
                 routed = _get_board_detector(profile["model_path"])
                 if routed is not None:
-                    # 운영 안정화: Stage1(피듀셜)은 기본 detector(best.pt) 고정,
-                    # Stage2(검사)만 보드별 모델로 라우팅한다.
+                    # 통일 모드: Stage1/Stage2 모두 보드별 모델로 라우팅.
+                    stage1_detector = routed
                     stage2_detector = routed
                     logger.info(
                         "[멀티보드] board=%s (class=%s, conf=%.3f) -> model=%s",
@@ -335,7 +335,7 @@ def _run_production_vision_pipeline(
                     if fallback:
                         routed = _get_board_detector(fallback["model_path"])
                         if routed is not None:
-                            # fallback 시에도 Stage1은 기본 detector 유지.
+                            stage1_detector = routed
                             stage2_detector = routed
                             selected_board_type = settings.DEFAULT_BOARD_TYPE
                             logger.warning(
