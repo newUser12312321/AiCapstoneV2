@@ -1,0 +1,4 @@
+names:
+  0: FIDUCIAL
+path: .
+train: train.txt

@@ -4,9 +4,9 @@ YOLOv8 / YOLO11 추론 모듈
 Ultralytics 라이브러리를 사용하여 모델을 로드하고,
 주어진 이미지에서 피듀셜 마크 또는 결함을 탐지한다.
 
-2-Stage 파이프라인:
+검사 파이프라인:
   Stage 1: 전체 이미지에서 피듀셜 마크(FIDUCIAL) 탐지 → 정렬 판단
-  Stage 2: 정렬된 ROI(관심 영역)에서 결함(TRACE_OPEN, METAL_DAMAGE) 탐지
+  Stage 2: 정렬된 이미지(또는 ROI)에서 클래스 탐지
 """
 
 import time
@@ -72,9 +72,8 @@ class YoloDetector:
         detector = YoloDetector()
         items = detector.detect(frame, target_class="FIDUCIAL")
 
-    사용 예 — 2-Stage 분리 모델:
-        fiducial_detector = YoloDetector(weights_path=settings.YOLO_FIDUCIAL_WEIGHTS)
-        defect_detector   = YoloDetector(weights_path=settings.YOLO_DEFECT_WEIGHTS)
+    사용 예 — 멀티보드 라우팅:
+        board_detector = YoloDetector(weights_path="weights/g_series_best.pt")
     """
 
     def __init__(

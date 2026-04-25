@@ -46,12 +46,7 @@ class Settings(BaseSettings):
     CAMERA_FOCUS_POST_PLUG_AF_MS: int = Field(default=0, ge=0, le=10000)
 
     # ── YOLO 추론 설정 ───────────────────────────────────────────────────────
-    # Stage 1: 피듀셜 마크 탐지 모델 (클래스: FIDUCIAL)
-    YOLO_FIDUCIAL_WEIGHTS: str = Field(default="weights/fiducial_best.pt")
-    # Stage 2: 결함 탐지 모델 (클래스: TRACE_OPEN, METAL_DAMAGE)
-    YOLO_DEFECT_WEIGHTS: str = Field(default="weights/defect_best.pt")
-
-    # 하위 호환: 단일 모델 사용 시 (두 Stage 합쳐서 학습한 경우)
+    # 단일 통합 모델 (best.pt) 사용
     YOLO_WEIGHTS_PATH: str = Field(default="weights/best.pt")
 
     # 이 값 이상의 confidence (Stage 전용 값이 없을 때 피듀셜·결함 공통 기본)
@@ -68,26 +63,43 @@ class Settings(BaseSettings):
     # True: TTA(증강 추론) — 약한 클래스 재현율 소폭↑, 추론 시간↑
     YOLO_PREDICT_AUGMENT: bool = Field(default=False)
 
-    # 2-Stage 분리 모델 사용 여부
-    # True: fiducial_best.pt + defect_best.pt 각각 사용
-    # False: best.pt 단일 모델 사용
-    USE_SEPARATE_MODELS: bool = Field(default=False)
-
-    # True: Stage 2를 피듀셜 사이 좁은 ROI가 아니라 deskew 직후 **전체 프레임**에 수행.
+    # True: Stage 2를 피듀셜 사이 좁은 ROI가 아니라 정합(또는 raw) **전체 프레임**에 수행.
     # PCB 다클래스(mount_hole, gold_finger_row 등)는 ROI 밖이 대부분이라 True 권장.
     DEFECT_INFER_ON_FULL_DESKEW: bool = Field(default=True)
+    # Stage 2 입력 소스:
+    # - "aligned": Stage1 좌표 정합 후 이미지 기준(권장)
+    # - "deskew": 하위 호환 alias (내부적으로 aligned와 동일 처리)
+    # - "raw": Stage1 보정 전 원본 이미지 기준
+    STAGE2_SOURCE_MODE: str = Field(default="aligned")
+
+    # ── 좌표 정합(Similarity: translation/rotation/scale) ────────────────────
+    # 정합 기준 피듀셜 좌표 (정합 결과 이미지 좌표계)
+    ALIGN_REF_FIDUCIAL1_X: int = Field(default=278, ge=0)
+    ALIGN_REF_FIDUCIAL1_Y: int = Field(default=908, ge=0)
+    ALIGN_REF_FIDUCIAL2_X: int = Field(default=1528, ge=0)
+    ALIGN_REF_FIDUCIAL2_Y: int = Field(default=202, ge=0)
+    # 정합 출력 캔버스 크기
+    ALIGN_OUTPUT_WIDTH: int = Field(default=1920, ge=320, le=4096)
+    ALIGN_OUTPUT_HEIGHT: int = Field(default=1080, ge=240, le=4096)
 
     # True(기본): YOLO가 1건이라도 잡으면 FAIL (단선/까짐 전용 모델).
     # False: 정렬 성공 시 PASS — 탐지 박스는 그대로 서버·대시보드에 보냄(부품 검출·표시용).
     FAIL_ON_ANY_YOLO_DETECTION: bool = Field(default=True)
 
+    # ── 멀티보드 라우팅 설정 ──────────────────────────────────────────────────
+    MULTI_BOARD_ENABLED: bool = Field(default=False)
+    # 보드 식별용 모델 (board-name-zone 클래스 탐지 전용, 기본은 현재 best.pt)
+    BOARD_ID_WEIGHTS_PATH: str = Field(default="weights/best.pt")
+    # 보드 프로파일(JSON) 파일 경로. edge/ 기준 상대 경로 허용.
+    BOARD_PROFILES_PATH: str = Field(default="config/board_profiles.json")
+    BOARD_ID_MIN_CONFIDENCE: float = Field(default=0.4, ge=0.0, le=1.0)
+    # unknown 처리 정책: abort | fallback_default
+    BOARD_UNKNOWN_POLICY: str = Field(default="abort")
+    # fallback_default 정책에서 사용할 기본 보드 타입 키
+    DEFAULT_BOARD_TYPE: Optional[str] = Field(default=None)
+
     # ── FastAPI 서버 포트 ────────────────────────────────────────────────────
     EDGE_API_PORT: int = Field(default=8000)
-
-    # ── GPIO 핀 번호 (BCM 모드) ──────────────────────────────────────────────
-    BUZZER_PIN: int = Field(default=17)
-    LED_RED_PIN: int = Field(default=27)    # 불합격(FAIL) 표시
-    LED_GREEN_PIN: int = Field(default=22)  # 합격(PASS) 표시
 
     # ── 실행 환경 ────────────────────────────────────────────────────────────
     # "production": 실제 라즈베리파이에서 GPIO/YOLO 실제 동작
@@ -127,6 +139,24 @@ class Settings(BaseSettings):
         if self.YOLO_DEFECT_CONFIDENCE_THRESHOLD is not None:
             return float(self.YOLO_DEFECT_CONFIDENCE_THRESHOLD)
         return float(self.YOLO_CONFIDENCE_THRESHOLD)
+
+    @field_validator("STAGE2_SOURCE_MODE")
+    @classmethod
+    def _validate_stage2_source_mode(cls, v: str) -> str:
+        mode = (v or "").strip().lower()
+        if mode not in {"raw", "deskew", "aligned"}:
+            raise ValueError("STAGE2_SOURCE_MODE must be 'raw', 'deskew', or 'aligned'")
+        if mode == "deskew":
+            return "aligned"
+        return mode
+
+    @field_validator("BOARD_UNKNOWN_POLICY")
+    @classmethod
+    def _validate_board_unknown_policy(cls, v: str) -> str:
+        policy = (v or "").strip().lower()
+        if policy not in {"abort", "fallback_default"}:
+            raise ValueError("BOARD_UNKNOWN_POLICY must be 'abort' or 'fallback_default'")
+        return policy
 
     # pydantic-settings 설정:
     # .env 파일을 자동으로 찾아 읽고, 대소문자를 구분하지 않는다.

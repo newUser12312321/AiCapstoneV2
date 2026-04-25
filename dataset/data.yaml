@@ -1,0 +1,11 @@
+path: C:/Projects/AiCapstoneV2/dataset
+train: images/train
+val: images/val
+
+names:
+  0: mount_hole
+  1: gold_finger_row
+  2: fiducial
+  3: smd_array_block
+  4: ic_chip
+  5: edge_connector_zone

@@ -116,6 +116,32 @@ docker compose down -v
 - Docker 실행 시 `VITE_EDGE_CAPTURE_URL`은 자동으로 `http://edge:8000`을 사용한다.
 - 대시보드에서 "로컬 이미지 업로드로 검사" 기능을 사용하면 웹캠 없이도 검사 파이프라인을 테스트할 수 있다.
 
+## Docker 분리 배포 (PC: backend/frontend, 라즈베리파이: edge)
+
+PC에서는 `docker-compose.pc.yml`로 `mysql + backend + frontend`만 실행하고, 라즈베리파이에서는 `edge`를 별도로 실행할 수 있다.
+
+### 1) PC에서 실행
+
+PowerShell:
+
+```powershell
+$env:VITE_EDGE_CAPTURE_URL="http://<라즈베리파이_IP>:8000"
+docker compose -f docker-compose.pc.yml up --build
+```
+
+- 프론트엔드: `http://localhost:5173`
+- 백엔드 API: `http://localhost:8080`
+- MySQL: `localhost:3307`
+
+### 2) 라즈베리파이에서 edge 실행
+
+라즈베리파이 `edge`의 `SERVER_BASE_URL`은 PC 백엔드 주소를 바라보도록 설정:
+
+```bash
+export SERVER_BASE_URL=http://<PC_IP>:8080
+python main.py
+```
+
 ## 기술 스택
 
 | 레이어 | 기술 |

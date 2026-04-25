@@ -179,6 +179,89 @@ def deskew_image_by_fiducial_angle(
     )
 
 
+def align_image_to_reference_by_fiducials(
+    image: np.ndarray,
+    alignment: AlignmentResult,
+    *,
+    ref_f1: tuple[float, float],
+    ref_f2: tuple[float, float],
+    out_size: tuple[int, int],
+) -> tuple[np.ndarray, AlignmentResult, np.ndarray]:
+    """
+    피듀셜 2점을 이용해 Similarity(translation/rotation/scale) 정합을 수행한다.
+
+    Args:
+        image: 입력 이미지
+        alignment: compute_alignment 결과 (fiducial1/2 필요)
+        ref_f1: 정합 기준 F1 좌표 (x, y)
+        ref_f2: 정합 기준 F2 좌표 (x, y)
+        out_size: 출력 크기 (width, height)
+
+    Returns:
+        (정합 이미지, 정합 후 alignment, 2x3 affine matrix)
+    """
+    if alignment.fiducial1 is None or alignment.fiducial2 is None:
+        raise ValueError("정합을 위해 fiducial1/2가 필요합니다.")
+
+    src1 = np.array([alignment.fiducial1.center_x, alignment.fiducial1.center_y], dtype=np.float64)
+    src2 = np.array([alignment.fiducial2.center_x, alignment.fiducial2.center_y], dtype=np.float64)
+    dst1 = np.array([float(ref_f1[0]), float(ref_f1[1])], dtype=np.float64)
+    dst2 = np.array([float(ref_f2[0]), float(ref_f2[1])], dtype=np.float64)
+
+    vs = src2 - src1
+    vd = dst2 - dst1
+    den = float(vs[0] * vs[0] + vs[1] * vs[1])
+    if den <= 1e-9:
+        raise ValueError("피듀셜 간 거리(원본)가 너무 짧아 정합할 수 없습니다.")
+
+    # Similarity: [a -b tx; b a ty]
+    a = float((vs[0] * vd[0] + vs[1] * vd[1]) / den)
+    b = float((vs[0] * vd[1] - vs[1] * vd[0]) / den)
+    tx = float(dst1[0] - (a * src1[0] - b * src1[1]))
+    ty = float(dst1[1] - (b * src1[0] + a * src1[1]))
+    m23 = np.array([[a, -b, tx], [b, a, ty]], dtype=np.float64)
+
+    out_w, out_h = int(out_size[0]), int(out_size[1])
+    aligned = cv2.warpAffine(
+        image,
+        m23,
+        (out_w, out_h),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0),
+    )
+
+    b1 = _clip_bbox_to_image(_bbox_after_affine(alignment.fiducial1.bbox, m23), out_w, out_h)
+    b2 = _clip_bbox_to_image(_bbox_after_affine(alignment.fiducial2.bbox, m23), out_w, out_h)
+
+    new_f1 = DetectionItem(
+        defect_type=alignment.fiducial1.defect_type,
+        confidence=alignment.fiducial1.confidence,
+        bbox=b1,
+    )
+    new_f2 = DetectionItem(
+        defect_type=alignment.fiducial2.defect_type,
+        confidence=alignment.fiducial2.confidence,
+        bbox=b2,
+    )
+
+    logger.info(
+        "[정렬] 좌표 정합 적용(similarity): out=%dx%d, a=%.5f, b=%.5f",
+        out_w,
+        out_h,
+        a,
+        b,
+    )
+
+    new_alignment = AlignmentResult(
+        is_aligned=True,
+        fiducial1=new_f1,
+        fiducial2=new_f2,
+        angle_error_deg=0.0,
+    )
+    return aligned, new_alignment, m23
+
+
 def crop_inspection_roi_with_offset(
     image: np.ndarray,
     alignment: AlignmentResult,
