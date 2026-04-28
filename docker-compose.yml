@@ -32,40 +32,17 @@ services:
     ports:
       - "8080:8080"
 
-  edge:
-    build:
-      context: ./edge
-    container_name: aicapstone-edge
-    depends_on:
-      - backend
-    environment:
-      SERVER_BASE_URL: http://backend:8080
-      ENVIRONMENT: development
-      CAMERA_DEVICE_INDEX: 0
-      TZ: Asia/Seoul
-      # PCB 다클래스: deskew 전체 프레임 추론 + 부품 박스만 표시 시 합격 유지
-      DEFECT_INFER_ON_FULL_DESKEW: "true"
-      FAIL_ON_ANY_YOLO_DETECTION: "false"
-      YOLO_PREDICT_IMGSZ: "1024"
-      YOLO_DEFECT_CONFIDENCE_THRESHOLD: "0.15"
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./edge/captures:/app/captures
-      - ./edge/demo_samples:/app/demo_samples
-      # Colab 등에서 받은 best.pt 를 edge/weights/best.pt 로 두면 컨테이너에 반영됨
-      - ./edge/weights:/app/weights
-
   frontend:
     build:
       context: ./frontend
     container_name: aicapstone-frontend
     depends_on:
       - backend
-      - edge
     environment:
       VITE_API_PROXY_TARGET: http://backend:8080
-      VITE_EDGE_CAPTURE_URL: http://edge:8000
+      # 라즈베리파이에서 edge를 따로 실행할 때 사용할 주소
+      # 예) VITE_EDGE_CAPTURE_URL=http://192.168.0.23:8000
+      VITE_EDGE_CAPTURE_URL: ${VITE_EDGE_CAPTURE_URL}
     ports:
       - "5173:5173"
 
