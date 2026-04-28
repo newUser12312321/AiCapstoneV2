@@ -66,7 +66,8 @@ python main.py   # :8000
 
 ## Docker로 팀 개발 환경 실행 (권장)
 
-아래 구성은 `mysql + backend + edge + frontend`를 한 번에 실행한다.
+아래 구성은 기본 `docker-compose.yml` 기준으로 `mysql + backend + frontend`를 실행한다.
+라즈베리파이의 `edge`는 별도로 실행해 연결한다.
 
 ### 팀원용 1분 실행 체크리스트
 
@@ -83,7 +84,7 @@ docker compose up --build
 
 문제 발생 시 빠른 확인:
 
-- [ ] 포트 충돌 확인 (`5173`, `8080`, `8000`, `3306`)
+- [ ] 포트 충돌 확인 (`5173`, `8080`, `3307`)
 - [ ] 로그 확인: `docker compose logs -f`
 
 ```bash
@@ -92,8 +93,7 @@ docker compose up --build
 
 - 프론트엔드: `http://localhost:5173`
 - 백엔드 API: `http://localhost:8080`
-- 엣지 FastAPI: `http://localhost:8000`
-- MySQL: `localhost:3306`
+- MySQL: `localhost:3307`
 
 중지:
 
@@ -113,12 +113,13 @@ docker compose down -v
   - `/api` -> `VITE_API_PROXY_TARGET` (기본 `http://localhost:8080`)
   - `/edge`, `/captures` -> `VITE_EDGE_CAPTURE_URL`
 - Docker 실행 시 `VITE_API_PROXY_TARGET`은 자동으로 `http://backend:8080`을 사용한다.
-- Docker 실행 시 `VITE_EDGE_CAPTURE_URL`은 자동으로 `http://edge:8000`을 사용한다.
+- `VITE_EDGE_CAPTURE_URL`은 환경변수로 지정한다 (예: `http://<라즈베리파이_IP>:8000`).
 - 대시보드에서 "로컬 이미지 업로드로 검사" 기능을 사용하면 웹캠 없이도 검사 파이프라인을 테스트할 수 있다.
 
 ## Docker 분리 배포 (PC: backend/frontend, 라즈베리파이: edge)
 
-PC에서는 `docker-compose.pc.yml`로 `mysql + backend + frontend`만 실행하고, 라즈베리파이에서는 `edge`를 별도로 실행할 수 있다.
+기본 `docker compose up --build`는 PC에서 `mysql + backend + frontend`만 실행한다.
+라즈베리파이에서는 `edge`를 별도로 실행해 연결한다.
 
 ### 1) PC에서 실행
 
@@ -126,7 +127,7 @@ PowerShell:
 
 ```powershell
 $env:VITE_EDGE_CAPTURE_URL="http://<라즈베리파이_IP>:8000"
-docker compose -f docker-compose.pc.yml up --build
+docker compose up --build
 ```
 
 - 프론트엔드: `http://localhost:5173`
